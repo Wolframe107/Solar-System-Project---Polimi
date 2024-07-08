@@ -52,6 +52,19 @@ protected:
     PlanetProperties planetProps[NUM_PLANETS];
 
     // Other application parameters
+	glm::vec3 CamPos = glm::vec3(0, 10, 100); // Camera start position
+    glm::vec3 CamTarget = glm::vec3(0, 0, 0); // Camera target (sun)
+    glm::vec3 CamUp = glm::vec3(0, 1, 0);     // Camera up direction
+
+    glm::mat4 ViewMatrix = glm::lookAt(CamPos, CamTarget, CamUp);
+
+    float acc = 0.0f;
+    float vel = 0.0f;
+    float x_rot = 0.0f;
+    float y_rot = 0.0f;
+    float z_rot = 0.0f;
+    const float rotation_speed = 1.0f;
+	
     float time = 0.0f;
 
     void setWindowParameters() {
@@ -173,19 +186,104 @@ protected:
     }
 
     void updateUniformBuffer(uint32_t currentImage) {
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE)) {
-            glfwSetWindowShouldClose(window, GL_TRUE);
-        }
+    	static bool debounce = false;
+        static int curDebounce = 0;
 
+        // ***----------------------------***
+        // INPUT + VIEWMATRIX STUFF
+
+        // Integration with the timers and the controllers
         float deltaT;
         glm::vec3 m = glm::vec3(0.0f), r = glm::vec3(0.0f);
         bool fire = false;
         getSixAxis(deltaT, m, r, fire);
 
-        // Update time
-        time += deltaT;
+        // getSixAxis() is defined in Starter.hpp in the base class.
+        // It fills the float point variable passed in its first parameter with the time
+        // since the last call to the procedure.
+        // It fills vec3 in the second parameters, with three values in the -1,1 range corresponding
+        // to motion (with left stick of the gamepad, or ASWD + RF keys on the keyboard)
+        // It fills vec3 in the third parameters, with three values in the -1,1 range corresponding
+        // to motion (with right stick of the gamepad, or Arrow keys + QE keys on the keyboard, or mouse)
+        // If fills the last boolean variable with true if fire has been pressed:
+        //          SPACE on the keyboard, A or B button on the Gamepad, Right mouse button
+        
+        // Update acceleration
+        const float accAmount = 0.0005f;
+        const float accMin = -0.01f;
+        const float accMax = 0.01f;
+        const float decAmount = 0.0002f; // Deceleration amount
 
-        // Camera parameters
+        if (m.z != 0) {
+            acc += accAmount * m.z;
+            if (acc > accMax) acc = accMax;
+            if (acc < accMin) acc = accMin;
+        }
+        else {
+            // Decelerate to zero if no key is pressed
+            if (acc > 0) {
+                acc -= decAmount;
+                if (acc < 0) acc = 0;
+            }
+            else if (acc < 0) {
+                acc += decAmount;
+                if (acc > 0) acc = 0;
+            }
+        }
+        //std::cout << "acc: " << acc << std::endl;
+
+        vel += acc;
+        //std::cout << "Velocity: " << vel << std::endl;
+        // 
+        // Set vel to 0 when around margin
+        if (vel > -0.25f && vel < 0.25f) {
+            if (vel < 0.0) vel += 0.001f;
+            if (vel > 0.0) vel -= 0.001f;
+        }
+
+        // Update rotation
+        const float rotAmount = 0.005;
+
+        // X-axis rotation
+        if (r.x != 0 && x_rot < 1.0) {
+            x_rot += rotAmount * r.x;
+        }
+        else if (x_rot > 0.0) {
+            x_rot -= rotAmount;
+        }
+        else if (x_rot < 0.0) {
+            x_rot += rotAmount;
+        }
+
+        // Y-axis rotation
+        if (r.y != 0 && y_rot < 1.0) {
+            y_rot += rotAmount * r.y;
+        }
+        else if (y_rot > 0.0) {
+            y_rot -= rotAmount;
+        }
+        else if (y_rot < 0.0) {
+            y_rot += rotAmount;
+        }
+
+        // Z-axis rotation
+        if (r.z != 0 && z_rot < 1.0) {
+            z_rot += rotAmount * r.z;
+        }
+        else if (z_rot > 0.0) {
+            z_rot -= rotAmount;
+        }
+        else if (z_rot < 0.0) {
+            z_rot += rotAmount;
+        }
+
+        // Updating the View Matrix
+        ViewMatrix = glm::rotate(glm::mat4(1), rotation_speed * x_rot * deltaT, glm::vec3(1, 0, 0)) * ViewMatrix;
+        ViewMatrix = glm::rotate(glm::mat4(1), rotation_speed * y_rot * deltaT, glm::vec3(0, 1, 0)) * ViewMatrix;
+        ViewMatrix = glm::rotate(glm::mat4(1), -rotation_speed * z_rot * deltaT, glm::vec3(0, 0, 1)) * ViewMatrix;
+        ViewMatrix = glm::translate(glm::mat4(1), -glm::vec3(0, 0, -vel * deltaT)) * ViewMatrix;
+
+        // Perspective + View
         const float FOVy = glm::radians(45.0f);
         const float nearPlane = 0.1f;
         const float farPlane = 500.0f;
@@ -193,10 +291,34 @@ protected:
         glm::mat4 Prj = glm::perspective(FOVy, Ar, nearPlane, farPlane);
         Prj[1][1] *= -1;
 
-        // Camera position and target
-        glm::vec3 camTarget = glm::vec3(0, 0, 0);
-        glm::vec3 camPos = camTarget + glm::vec3(0, 50, 100);
-        glm::mat4 View = glm::lookAt(camPos, camTarget, glm::vec3(0, 1, 0));
+        glm::mat4 View = ViewMatrix;
+
+        // Debugging key V
+        if (glfwGetKey(window, GLFW_KEY_V)) {
+            if (!debounce) {
+                debounce = true;
+                curDebounce = GLFW_KEY_V;
+
+                printMat4("ViewMatrix  ", View);
+
+            }
+        }
+        else {
+            if ((curDebounce == GLFW_KEY_V) && debounce) {
+                debounce = false;
+                curDebounce = 0;
+            }
+        }
+
+        // Standard procedure to quit when the ESC key is pressed
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE)) {
+            glfwSetWindowShouldClose(window, GL_TRUE);
+        }
+        
+        // ***----------------------------***
+        
+        // Update time
+        time += deltaT;
 
         // Light position (at the sun's position)
         glm::vec3 lightPos = glm::vec3(0, 0, 0);
