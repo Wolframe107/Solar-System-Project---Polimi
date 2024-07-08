@@ -1,6 +1,16 @@
+<<<<<<< Updated upstream
 // This has been adapted from the Vulkan tutorial
 
+=======
+// MeshLoader.cpp
+>>>>>>> Stashed changes
 #include "Starter.hpp"
+#include <json.hpp>
+#include <fstream>
+#define _USE_MATH_DEFINES
+#include <math.h>
+
+using json = nlohmann::json;
 
 // The uniform buffer objects data structures
 // Remember to use the correct alignas(...) value
@@ -39,6 +49,7 @@ class MeshLoader : public BaseProject {
 	// Vertex formats
 	VertexDescriptor VD;
 
+<<<<<<< Updated upstream
 	// Pipelines [Shader couples]
 	Pipeline P;
 
@@ -134,6 +145,68 @@ class MeshLoader : public BaseProject {
 		// The last array, is a vector of pointer to the layouts of the sets that will
 		// be used in this pipeline. The first element will be set 0, and so on..
 		P.init(this, &VD, "shaders/ShaderVert.spv", "shaders/ShaderFrag.spv", {&DSL});
+=======
+    // Solar system objects
+    static const int NUM_PLANETS = 8;  // Mercury to Neptune
+    Model<Vertex> sun;
+    Model<Vertex> planets[NUM_PLANETS];
+    Model<Vertex> moon;
+    Model<Vertex> saturnRing;
+    DescriptorSet sunDS;
+    DescriptorSet planetDS[NUM_PLANETS];
+    DescriptorSet moonDS;
+    DescriptorSet saturnRingDS;
+    Texture sunTexture;
+    Texture planetTextures[NUM_PLANETS];
+    Texture moonTexture;
+    Texture saturnRingTexture;
+
+    // C++ storage for uniform variables
+    UniformBlock sunUBO;
+    UniformBlock planetUBO[NUM_PLANETS];
+    UniformBlock moonUBO;
+    UniformBlock saturnRingUBO;
+
+    // Planet properties
+    struct PlanetProperties {
+        float orbitRadius;
+        float revolutionSpeed;
+        float rotationSpeed;
+        float eclipticInclination;
+        float axialTilt;
+        glm::vec3 scale;
+    };
+    PlanetProperties planetProps[NUM_PLANETS];
+
+    // Moon properties
+    struct MoonProperties {
+        float orbitRadius;
+        float revolutionSpeed;
+        float rotationSpeed;
+        glm::vec3 scale;
+    };
+    MoonProperties moonProps;
+
+    // Sun scale
+    glm::vec3 sunScale;
+
+    // Other application parameters
+    float time = 0.0f;
+
+    // JSON data
+    json solarSystemData;
+
+    void setWindowParameters() {
+        windowWidth = 1600;
+        windowHeight = 900;
+        windowTitle = "Solar System Simulation";
+        windowResizable = GLFW_TRUE;
+        initialBackgroundColor = { 0.0f, 0.0f, 0.02f, 1.0f };
+
+        uniformBlocksInPool = NUM_PLANETS + 3;  // +3 for sun, moon, and Saturn's ring
+        texturesInPool = NUM_PLANETS + 3;
+        setsInPool = NUM_PLANETS + 3;
+>>>>>>> Stashed changes
 
 		// Models, textures and Descriptors (values assigned to the uniforms)
 
@@ -145,6 +218,7 @@ class MeshLoader : public BaseProject {
 		M2.init(this,   &VD, "Models/Sphere.gltf", GLTF);
 		M3.init(this,   &VD, "Models/dish.005_Mesh.098.mgcg", MGCG);
 
+<<<<<<< Updated upstream
 		// Creates a mesh with direct enumeration of vertices and indices
 		M4.vertices = {{{-6,-2,-6}, {0.0f,0.0f}}, {{-6,-2,6}, {0.0f,1.0f}},
 					    {{6,-2,-6}, {1.0f,0.0f}}, {{ 6,-2,6}, {1.0f,1.0f}}};
@@ -163,6 +237,58 @@ class MeshLoader : public BaseProject {
 	void pipelinesAndDescriptorSetsInit() {
 		// This creates a new pipeline (with the current surface), using its shaders
 		P.create();
+=======
+    void loadSolarSystemData() {
+        std::ifstream file("solarSystemData.json");
+        file >> solarSystemData;
+    }
+
+    void createRingModel() {
+        std::vector<Vertex> ringVertices;
+        std::vector<uint32_t> ringIndices;
+
+        const int segments = 64;
+        const float innerRadius = 1.2f;
+        const float outerRadius = 2.0f;
+
+        for (int i = 0; i <= segments; ++i) {
+            float angle = 2.0f * M_PI * i / segments;
+            float cosAngle = cos(angle);
+            float sinAngle = sin(angle);
+
+            // Inner vertex
+            ringVertices.push_back({ {innerRadius * cosAngle, 0.0f, innerRadius * sinAngle},
+                                    {(float)i / segments, 0.0f},
+                                    {0.0f, 1.0f, 0.0f} });
+
+            // Outer vertex
+            ringVertices.push_back({ {outerRadius * cosAngle, 0.0f, outerRadius * sinAngle},
+                                    {(float)i / segments, 1.0f},
+                                    {0.0f, 1.0f, 0.0f} });
+
+            if (i < segments) {
+                int baseIndex = i * 2;
+                ringIndices.push_back(baseIndex);
+                ringIndices.push_back(baseIndex + 1);
+                ringIndices.push_back(baseIndex + 2);
+                ringIndices.push_back(baseIndex + 1);
+                ringIndices.push_back(baseIndex + 3);
+                ringIndices.push_back(baseIndex + 2);
+            }
+        }
+
+        saturnRing.vertices = ringVertices;
+        saturnRing.indices = ringIndices;
+        saturnRing.initMesh(this, &VD);
+    }
+
+    void localInit() {
+        // Descriptor Layouts
+        DSL.init(this, {
+            {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_ALL_GRAPHICS},
+            {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT}
+            });
+>>>>>>> Stashed changes
 
 		// Here you define the data set
 		DS1.init(this, &DSL, {
@@ -195,12 +321,20 @@ class MeshLoader : public BaseProject {
 		// Cleanup pipelines
 		P.cleanup();
 
+<<<<<<< Updated upstream
 		// Cleanup datasets
 		DS1.cleanup();
 		DS2.cleanup();
 		DS3.cleanup();
 		DS4.cleanup();
 	}
+=======
+        loadSolarSystemData();
+
+        // Load sun model and texture
+        sun.init(this, &VD, "Models/Sphere.gltf", GLTF);
+        sunTexture.init(this, "textures/Sun.jpg");
+>>>>>>> Stashed changes
 
 	// Here you destroy all the Models, Texture and Desc. Set Layouts you created!
 	// All the object classes defined in Starter.hpp have a method .cleanup() for this purpose
@@ -233,6 +367,7 @@ class MeshLoader : public BaseProject {
 		P.bind(commandBuffer);
 		// For a pipeline object, this command binds the corresponing pipeline to the command buffer passed in its parameter
 
+<<<<<<< Updated upstream
 		// binds the data set
 		DS1.bind(commandBuffer, P, 0, currentImage);
 		// For a Dataset object, this command binds the corresponing dataset
@@ -266,6 +401,37 @@ class MeshLoader : public BaseProject {
 		vkCmdDrawIndexed(commandBuffer,
 				static_cast<uint32_t>(M4.indices.size()), 1, 0, 0, 0);
 	}
+=======
+        // Load moon model and texture
+        moon.init(this, &VD, "Models/Sphere.gltf", GLTF);
+        moonTexture.init(this, "textures/Moon.jpg");
+
+        // Create and load Saturn's ring
+        createRingModel();
+        saturnRingTexture.init(this, "textures/SaturnRing.png");
+
+        // Set planet properties based on JSON data
+        for (int i = 0; i < NUM_PLANETS; i++) {
+            const auto& planetData = solarSystemData[planetNames[i]];
+            planetProps[i].orbitRadius = planetData["distance_from_sun"];
+            planetProps[i].revolutionSpeed = 1.0f / planetData["revolution_period"].get<float>();
+            planetProps[i].rotationSpeed = 1.0f / planetData["rotation_period"].get<float>();
+            planetProps[i].eclipticInclination = glm::radians(planetData["ecliptic_inclination"].get<float>());
+            planetProps[i].axialTilt = glm::radians(planetData["axial_tilt"].get<float>());
+            planetProps[i].scale = glm::vec3(planetData["radius"].get<float>());
+        }
+
+        // Set moon properties
+        const auto& moonData = solarSystemData["Moon"];
+        moonProps.orbitRadius = moonData["distance_from_planet"];
+        moonProps.revolutionSpeed = 1.0f / moonData["revolution_period"].get<float>();
+        moonProps.rotationSpeed = 1.0f / moonData["rotation_period"].get<float>();
+        moonProps.scale = glm::vec3(moonData["radius"].get<float>());
+
+        // Set sun scale
+        sunScale = glm::vec3(solarSystemData["Sun"]["radius"].get<float>());
+    }
+>>>>>>> Stashed changes
 
 	// Here is where you update the uniforms.
 	// Very likely this will be where you will be writing the logic of your application.
@@ -303,6 +469,7 @@ class MeshLoader : public BaseProject {
 		glm::vec3 camPos    = camTarget + glm::vec3(6,3,10) / 2.0f;
 		glm::mat4 View = glm::lookAt(camPos, camTarget, glm::vec3(0,1,0));
 
+<<<<<<< Updated upstream
 
 		glm::mat4 World;
 
@@ -326,6 +493,179 @@ class MeshLoader : public BaseProject {
 		ubo4.mvpMat = Prj * View * World;
 		DS4.map(currentImage, &ubo4, sizeof(ubo4), 0);
 	}	
+=======
+        // Create descriptor sets for planets
+        for (int i = 0; i < NUM_PLANETS; i++) {
+            planetDS[i].init(this, &DSL, {
+                {0, UNIFORM, sizeof(UniformBlock), nullptr},
+                {1, TEXTURE, 0, &planetTextures[i]}
+                });
+        }
+
+        // Create descriptor set for moon
+        moonDS.init(this, &DSL, {
+            {0, UNIFORM, sizeof(UniformBlock), nullptr},
+            {1, TEXTURE, 0, &moonTexture}
+            });
+
+        // Create descriptor set for Saturn's ring
+        saturnRingDS.init(this, &DSL, {
+            {0, UNIFORM, sizeof(UniformBlock), nullptr},
+            {1, TEXTURE, 0, &saturnRingTexture}
+            });
+    }
+
+    void pipelinesAndDescriptorSetsCleanup() {
+        P.cleanup();
+        sunDS.cleanup();
+        for (int i = 0; i < NUM_PLANETS; i++) {
+            planetDS[i].cleanup();
+        }
+        moonDS.cleanup();
+        saturnRingDS.cleanup();
+    }
+
+    void localCleanup() {
+        sunTexture.cleanup();
+        sun.cleanup();
+        for (int i = 0; i < NUM_PLANETS; i++) {
+            planetTextures[i].cleanup();
+            planets[i].cleanup();
+        }
+        moonTexture.cleanup();
+        moon.cleanup();
+        saturnRingTexture.cleanup();
+        saturnRing.cleanup();
+        DSL.cleanup();
+        P.destroy();
+    }
+
+    void populateCommandBuffer(VkCommandBuffer commandBuffer, int currentImage) {
+        P.bind(commandBuffer);
+
+        // Draw sun
+        sunDS.bind(commandBuffer, P, 0, currentImage);
+        sun.bind(commandBuffer);
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(sun.indices.size()), 1, 0, 0, 0);
+
+        // Draw planets
+        for (int i = 0; i < NUM_PLANETS; i++) {
+            planetDS[i].bind(commandBuffer, P, 0, currentImage);
+            planets[i].bind(commandBuffer);
+            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(planets[i].indices.size()), 1, 0, 0, 0);
+        }
+
+        // Draw moon
+        moonDS.bind(commandBuffer, P, 0, currentImage);
+        moon.bind(commandBuffer);
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(moon.indices.size()), 1, 0, 0, 0);
+
+        // Draw Saturn's ring
+        saturnRingDS.bind(commandBuffer, P, 0, currentImage);
+        saturnRing.bind(commandBuffer);
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(saturnRing.indices.size()), 1, 0, 0, 0);
+    }
+
+    void updateUniformBuffer(uint32_t currentImage) {
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE)) {
+            glfwSetWindowShouldClose(window, GL_TRUE);
+        }
+
+        float deltaT;
+        glm::vec3 m = glm::vec3(0.0f), r = glm::vec3(0.0f);
+        bool fire = false;
+        getSixAxis(deltaT, m, r, fire);
+
+        // Update time
+        time += deltaT;
+
+        // Camera parameters
+        const float FOVy = glm::radians(45.0f);
+        const float nearPlane = 0.1f;
+        const float farPlane = 500.0f;
+
+        glm::mat4 Prj = glm::perspective(FOVy, Ar, nearPlane, farPlane);
+        Prj[1][1] *= -1;
+
+        // Camera position and target
+        glm::vec3 camTarget = glm::vec3(0, 0, 0);
+        glm::vec3 camPos = camTarget + glm::vec3(0, 70, 140);
+        glm::mat4 View = glm::lookAt(camPos, camTarget, glm::vec3(0, 1, 0));
+
+        // Light position (at the sun's position)
+        glm::vec3 lightPos = glm::vec3(0, 0, 0);
+
+        // Update sun uniform buffer
+        glm::mat4 sunWorld = glm::scale(glm::mat4(1.0f), sunScale);
+        sunUBO.mvpMat = Prj * View * sunWorld;
+        sunUBO.lightPos = lightPos;
+        sunDS.map(currentImage, &sunUBO, sizeof(sunUBO), 0);
+
+        // Update planet uniform buffers
+        for (int i = 0; i < NUM_PLANETS; i++) {
+            // Calculate planet position
+            float angle = time * planetProps[i].revolutionSpeed;
+            glm::vec3 position(
+                cos(angle) * planetProps[i].orbitRadius,
+                sin(planetProps[i].eclipticInclination) * planetProps[i].orbitRadius * sin(angle),
+                sin(angle) * planetProps[i].orbitRadius * cos(planetProps[i].eclipticInclination)
+            );
+
+            // Calculate planet rotation
+            glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), planetProps[i].axialTilt, glm::vec3(0, 0, 1)) *
+                glm::rotate(glm::mat4(1.0f), time * planetProps[i].rotationSpeed, glm::vec3(0, 1, 0));
+
+            // Create world matrix
+            glm::mat4 World = glm::translate(glm::mat4(1.0f), position) *
+                rotation *
+                glm::scale(glm::mat4(1.0f), planetProps[i].scale);
+
+            // Update uniform buffer
+            planetUBO[i].mvpMat = Prj * View * World;
+            planetUBO[i].lightPos = lightPos;
+            planetDS[i].map(currentImage, &planetUBO[i], sizeof(planetUBO[i]), 0);
+
+            // If this is Saturn, update its ring
+            if (i == 5) { // Assuming Saturn is the 6th planet (index 5)
+                glm::mat4 ringWorld = glm::translate(glm::mat4(1.0f), position) *
+                    glm::rotate(glm::mat4(1.0f), planetProps[i].axialTilt, glm::vec3(0, 0, 1)) *
+                    glm::scale(glm::mat4(1.0f), planetProps[i].scale * 3.0f); // Make ring larger than Saturn
+
+                saturnRingUBO.mvpMat = Prj * View * ringWorld;
+                saturnRingUBO.lightPos = lightPos;
+                saturnRingDS.map(currentImage, &saturnRingUBO, sizeof(saturnRingUBO), 0);
+            }
+        }
+
+        // Update moon uniform buffer
+        int earthIndex = 2; // Assuming Earth is the third planet (index 2) in our array
+        float earthAngle = time * planetProps[earthIndex].revolutionSpeed;
+        glm::vec3 earthPosition(
+            cos(earthAngle) * planetProps[earthIndex].orbitRadius,
+            sin(planetProps[earthIndex].eclipticInclination) * planetProps[earthIndex].orbitRadius * sin(earthAngle),
+            sin(earthAngle) * planetProps[earthIndex].orbitRadius * cos(planetProps[earthIndex].eclipticInclination)
+        );
+
+        float moonAngle = time * moonProps.revolutionSpeed;
+        glm::vec3 moonRelativePosition(
+            cos(moonAngle) * moonProps.orbitRadius,
+            sin(moonAngle) * moonProps.orbitRadius,
+            0
+        );
+
+        glm::vec3 moonPosition = earthPosition + moonRelativePosition;
+
+        glm::mat4 moonRotation = glm::rotate(glm::mat4(1.0f), time * moonProps.rotationSpeed, glm::vec3(0, 1, 0));
+
+        glm::mat4 moonWorld = glm::translate(glm::mat4(1.0f), moonPosition) *
+            moonRotation *
+            glm::scale(glm::mat4(1.0f), moonProps.scale);
+
+        moonUBO.mvpMat = Prj * View * moonWorld;
+        moonUBO.lightPos = lightPos;
+        moonDS.map(currentImage, &moonUBO, sizeof(moonUBO), 0);
+    }
+>>>>>>> Stashed changes
 };
 
 
