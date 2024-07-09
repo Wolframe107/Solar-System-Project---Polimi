@@ -52,19 +52,18 @@ protected:
     PlanetProperties planetProps[NUM_PLANETS];
 
     // Other application parameters
-	glm::vec3 CamPos = glm::vec3(0, 10, 100); // Camera start position
+    glm::vec3 CamPos = glm::vec3(0, 30, 100); // Camera start position
     glm::vec3 CamTarget = glm::vec3(0, 0, 0); // Camera target (sun)
     glm::vec3 CamUp = glm::vec3(0, 1, 0);     // Camera up direction
 
     glm::mat4 ViewMatrix = glm::lookAt(CamPos, CamTarget, CamUp);
 
-    float acc = 0.0f;
     float vel = 0.0f;
     float x_rot = 0.0f;
     float y_rot = 0.0f;
     float z_rot = 0.0f;
     const float rotation_speed = 1.0f;
-	
+
     float time = 0.0f;
 
     void setWindowParameters() {
@@ -186,7 +185,7 @@ protected:
     }
 
     void updateUniformBuffer(uint32_t currentImage) {
-    	static bool debounce = false;
+        static bool debounce = false;
         static int curDebounce = 0;
 
         // ***----------------------------***
@@ -207,40 +206,26 @@ protected:
         // to motion (with right stick of the gamepad, or Arrow keys + QE keys on the keyboard, or mouse)
         // If fills the last boolean variable with true if fire has been pressed:
         //          SPACE on the keyboard, A or B button on the Gamepad, Right mouse button
-        
+
         // Update acceleration
-        const float accAmount = 0.0005f;
-        const float accMin = -0.01f;
-        const float accMax = 0.01f;
-        const float decAmount = 0.0002f; // Deceleration amount
+        const float velMin = -5.0;
+        const float velMax = 5.0;
+        const float acc = 0.05f;
 
-        if (m.z != 0) {
-            acc += accAmount * m.z;
-            if (acc > accMax) acc = accMax;
-            if (acc < accMin) acc = accMin;
+        if (m.z != 0 && vel >= velMin && vel <= velMax) {
+            vel += m.z * acc;
+            if (vel > velMax) vel = velMax;
+            if (vel < velMin) vel = velMin;
         }
-        else {
-            // Decelerate to zero if no key is pressed
-            if (acc > 0) {
-                acc -= decAmount;
-                if (acc < 0) acc = 0;
-            }
-            else if (acc < 0) {
-                acc += decAmount;
-                if (acc > 0) acc = 0;
-            }
-        }
-        //std::cout << "acc: " << acc << std::endl;
 
-        vel += acc;
         //std::cout << "Velocity: " << vel << std::endl;
-        // 
-        // Set vel to 0 when around margin
+
+        // Set vel to 0 when around margin        
         if (vel > -0.25f && vel < 0.25f) {
             if (vel < 0.0) vel += 0.001f;
             if (vel > 0.0) vel -= 0.001f;
         }
-
+        
         // Update rotation
         const float rotAmount = 0.005;
 
@@ -314,9 +299,9 @@ protected:
         if (glfwGetKey(window, GLFW_KEY_ESCAPE)) {
             glfwSetWindowShouldClose(window, GL_TRUE);
         }
-        
+
         // ***----------------------------***
-        
+
         // Update time
         time += deltaT;
 
