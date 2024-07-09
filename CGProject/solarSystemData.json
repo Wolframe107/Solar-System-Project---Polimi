@@ -1,0 +1,80 @@
+{
+  "Sun": {
+    "distance_from_sun": 0,
+    "revolution_period": 1,
+    "ecliptic_inclination": 0,
+    "rotation_period": 28,
+    "axial_tilt": 0,
+    "radius": 3.0
+  },
+  "Mercury": {
+    "distance_from_sun": 8.0,
+    "revolution_period": 0.24,
+    "ecliptic_inclination": 7,
+    "rotation_period": 58.64,
+    "axial_tilt": 0.04,
+    "radius": 0.39
+  },
+  "Venus": {
+    "distance_from_sun": 12.0,
+    "revolution_period": 0.615,
+    "ecliptic_inclination": 3.39,
+    "rotation_period": 243.02,
+    "axial_tilt": 177.30,
+    "radius": 0.95
+  },
+  "Earth": {
+    "distance_from_sun": 20.0,
+    "revolution_period": 1,
+    "ecliptic_inclination": 0,
+    "rotation_period": 1,
+    "axial_tilt": 23.44,
+    "radius": 1
+  },
+  "Mars": {
+    "distance_from_sun": 26.0,
+    "revolution_period": 1.88,
+    "ecliptic_inclination": 1.85,
+    "rotation_period": 1.03,
+    "axial_tilt": 25.19,
+    "radius": 0.53
+  },
+  "Jupiter": {
+    "distance_from_sun": 42.0,
+    "revolution_period": 11.86,
+    "ecliptic_inclination": 1.3,
+    "rotation_period": 0.41,
+    "axial_tilt": 3.13,
+    "radius": 2.2
+  },
+  "Saturn": {
+    "distance_from_sun": 56.0,
+    "revolution_period": 29.46,
+    "ecliptic_inclination": 2.49,
+    "rotation_period": 0.44,
+    "axial_tilt": 26.73,
+    "radius": 2
+  },
+  "Uranus": {
+    "distance_from_sun": 72.0,
+    "revolution_period": 84.01,
+    "ecliptic_inclination": 0.77,
+    "rotation_period": -0.72,
+    "axial_tilt": 97.77,
+    "radius": 1.4
+  },
+  "Neptune": {
+    "distance_from_sun": 90.0,
+    "revolution_period": 164.8,
+    "ecliptic_inclination": 1.77,
+    "rotation_period": 0.67,
+    "axial_tilt": 28.32,
+    "radius": 1.37
+  },
+  "Moon": {
+    "distance_from_planet": 1.5,
+    "revolution_period": 0.0748,
+    "rotation_period": 27.3,
+    "radius": 0.273
+  }
+}
