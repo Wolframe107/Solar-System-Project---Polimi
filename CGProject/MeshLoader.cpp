@@ -1,11 +1,12 @@
 // MeshLoader.cpp
-#include "Starter.hpp"
 #include <json.hpp>
 #include <fstream>
 #define _USE_MATH_DEFINES
 #include <math.h>
+// This has been adapted from the Vulkan tutorial and modified for a solar system simulation
 
 using json = nlohmann::json;
+#include "Starter.hpp"
 
 // The uniform buffer objects data structure
 struct UniformBlock {
@@ -39,17 +40,21 @@ protected:
     Model<Vertex> sun;
     Model<Vertex> planets[NUM_PLANETS];
     Model<Vertex> moon;
+    Model<Vertex> ship;
     DescriptorSet sunDS;
     DescriptorSet planetDS[NUM_PLANETS];
     DescriptorSet moonDS;
+    DescriptorSet shipDS;
     Texture sunTexture;
     Texture planetTextures[NUM_PLANETS];
     Texture moonTexture;
+    Texture shipTexture;
 
     // C++ storage for uniform variables
     UniformBlock sunUBO;
     UniformBlock planetUBO[NUM_PLANETS];
     UniformBlock moonUBO;
+    UniformBlock shipUBO;
 
     // Planet properties
     struct PlanetProperties {
@@ -73,19 +78,26 @@ protected:
 
     // Sun scale
     glm::vec3 sunScale;
-
-    glm::vec3 CamPos = glm::vec3(0, 30, 100); // Camera start position
-    glm::vec3 CamTarget = glm::vec3(0, 0, 0); // Camera target (sun)
-    glm::vec3 CamUp = glm::vec3(0, 1, 0);     // Camera up direction
-
-    glm::mat4 ViewMatrix = glm::lookAt(CamPos, CamTarget, CamUp);
-
-
-    float vel = 0.0f;
-    float x_rot = 0.0f;
+    // Other application parameters
+    float vel = 0.0f; // Ship velocity
+    float viewMode = 0; // 0 for first person (Look-in), 1 for third person (Look-at)
+    float x_rot = 0.0f; //Rotations for the camera
     float y_rot = 0.0f;
     float z_rot = 0.0f;
-    const float rotation_speed = 1.0f;
+    glm::mat4 rotationMatrix;
+
+    // First person
+    glm::vec3 shipPos = glm::vec3(0, 30, 100);
+    glm::mat4 ViewMatrix = glm::translate(glm::mat4(1.0f), -shipPos);
+
+    // Third person
+    glm::vec3 thirdPersonCamPos = shipPos + glm::vec3(0, 5, -10); // Camera behind the ship
+    glm::vec3 thirdPersonCamTarget = shipPos;
+    glm::vec3 thirdPersonCamUp = glm::vec3(0, 1, 0);
+
+    glm::mat4 thirdPersonViewMatrix = glm::lookAt(thirdPersonCamPos, thirdPersonCamTarget, thirdPersonCamUp);
+
+    glm::mat4 View; // The actual view that gets used
 
     float time = 0.0f;
 
@@ -100,6 +112,7 @@ protected:
         initialBackgroundColor = { 0.0f, 0.0f, 0.02f, 1.0f };
 
         uniformBlocksInPool = NUM_PLANETS + 2;  // +2 for sun and moon
+        uniformBlocksInPool = NUM_PLANETS + 2;
         texturesInPool = NUM_PLANETS + 2;
         setsInPool = NUM_PLANETS + 2;
 
@@ -153,6 +166,15 @@ protected:
         // Load moon model and texture
         moon.init(this, &VD, "Models/Sphere.gltf", GLTF);
         moonTexture.init(this, "textures/Moon.jpg");
+        // Load ship model and texture
+        ship.init(this, &VD, "Models/cube.obj", OBJ);
+        shipTexture.init(this, "textures/checker.png");
+
+        // Set planet properties
+        float baseOrbitRadius = 5.0f;
+        float baseOrbitSpeed = 1.0f;
+        float baseRotationSpeed = 1.0f;
+        float baseScale = 0.3f;
 
         // Set planet properties based on JSON data
         for (int i = 0; i < NUM_PLANETS; i++) {
@@ -207,6 +229,7 @@ protected:
             planetDS[i].cleanup();
         }
         moonDS.cleanup();
+        shipDS.cleanup();
     }
 
     void localCleanup() {
@@ -218,6 +241,8 @@ protected:
         }
         moonTexture.cleanup();
         moon.cleanup();
+        shipTexture.cleanup();
+        ship.cleanup();
         DSL.cleanup();
         P.destroy();
     }
@@ -241,11 +266,19 @@ protected:
         moonDS.bind(commandBuffer, P, 0, currentImage);
         moon.bind(commandBuffer);
         vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(moon.indices.size()), 1, 0, 0, 0);
+        // Draw ship
+        shipDS.bind(commandBuffer, P, 0, currentImage);
+        ship.bind(commandBuffer);
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(ship.indices.size()), 1, 0, 0, 0);
+
     }
 
     void updateUniformBuffer(uint32_t currentImage) {
         static bool debounce = false;
         static int curDebounce = 0;
+
+        // ***----------------------------***
+        // INPUT + VIEWMATRIX STUFF
 
         // Integration with the timers and the controllers
         float deltaT;
@@ -320,10 +353,31 @@ protected:
         }
 
         // Updating the View Matrix
-        ViewMatrix = glm::rotate(glm::mat4(1), rotation_speed * x_rot * deltaT, glm::vec3(1, 0, 0)) * ViewMatrix;
-        ViewMatrix = glm::rotate(glm::mat4(1), rotation_speed * y_rot * deltaT, glm::vec3(0, 1, 0)) * ViewMatrix;
-        ViewMatrix = glm::rotate(glm::mat4(1), -rotation_speed * z_rot * deltaT, glm::vec3(0, 0, 1)) * ViewMatrix;
-        ViewMatrix = glm::translate(glm::mat4(1), -glm::vec3(0, 0, -vel * deltaT)) * ViewMatrix;
+        const float rotation_speed = 1.0f;
+        shipPos -= glm::vec3(0, 0, -vel * deltaT);
+
+        //rotationMatrix.x = glm::rotate(glm::mat4(1), rotation_speed * x_rot * deltaT, glm::vec3(1, 0, 0));
+        //rotationMatrix.y = glm::rotate(glm::mat4(1), rotation_speed * y_rot * deltaT, glm::vec3(0, 1, 0));
+        //rotationMatrix.z = glm::rotate(glm::mat4(1), rotation_speed * z_rot * deltaT, glm::vec3(0, 0, 1));
+        
+
+        if (viewMode == 0) {
+            // First-person (Look-in)
+            ViewMatrix = glm::rotate(glm::mat4(1), rotation_speed * x_rot * deltaT, glm::vec3(1, 0, 0)) * ViewMatrix;
+            ViewMatrix = glm::rotate(glm::mat4(1), rotation_speed * y_rot * deltaT, glm::vec3(0, 1, 0)) * ViewMatrix;
+            ViewMatrix = glm::rotate(glm::mat4(1), -rotation_speed * z_rot * deltaT, glm::vec3(0, 0, 1)) * ViewMatrix;
+            ViewMatrix = glm::translate(glm::mat4(1), -glm::vec3(0, 0, -vel * deltaT)) * ViewMatrix;
+            
+            View = ViewMatrix;
+        }
+        else {
+            // Third-person (Look-at)
+            thirdPersonCamPos = shipPos + glm::vec3(0, 5, -10);
+            thirdPersonCamTarget = shipPos;
+            //float Roll = 0.0f;
+            glm::mat4 thirdPersonViewMatrix = glm::lookAt(thirdPersonCamPos, thirdPersonCamTarget, glm::vec3(0, 1, 0));
+            View = thirdPersonViewMatrix;
+        }
 
         // Perspective + View
         const float FOVy = glm::radians(45.0f);
@@ -333,10 +387,25 @@ protected:
         glm::mat4 Prj = glm::perspective(FOVy, Ar, nearPlane, farPlane);
         Prj[1][1] *= -1;
 
-        glm::mat4 View = ViewMatrix;
+        
+        // Debugging key - P
+        if (glfwGetKey(window, GLFW_KEY_P)) {
+            if (!debounce) {
+                debounce = true;
+                curDebounce = GLFW_KEY_P;
 
+                printMat4("ViewMatrix  ", View);
 
-        // Debugging key V
+            }
+        }
+        else {
+            if ((curDebounce == GLFW_KEY_P) && debounce) {
+                debounce = false;
+                curDebounce = 0;
+            }
+        }
+
+        // Third person view - V
         if (glfwGetKey(window, GLFW_KEY_V)) {
             if (!debounce) {
                 debounce = true;
@@ -444,6 +513,12 @@ protected:
         if (glfwGetKey(window, GLFW_KEY_ESCAPE)) {
             glfwSetWindowShouldClose(window, GL_TRUE);
         }
+        // Update ship uniform buffers
+        glm::mat4 shipWorld = glm::translate(glm::mat4(1.0f), shipPos);
+        shipWorld = glm::scale(shipWorld, glm::vec3(1.0f));
+        shipUBO.mvpMat = Prj * View * sunWorld;
+        shipUBO.lightPos = lightPos;
+        shipDS.map(currentImage, &shipUBO, sizeof(shipUBO), 0);
     }
 };
 
