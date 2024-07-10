@@ -1,6 +1,11 @@
-// This has been adapted from the Vulkan tutorial and modified for a solar system simulation
-
+// MeshLoader.cpp
 #include "Starter.hpp"
+#include <json.hpp>
+#include <fstream>
+#define _USE_MATH_DEFINES
+#include <math.h>
+
+using json = nlohmann::json;
 
 // The uniform buffer objects data structure
 struct UniformBlock {
@@ -33,30 +38,48 @@ protected:
     static const int NUM_PLANETS = 8;  // Mercury to Neptune
     Model<Vertex> sun;
     Model<Vertex> planets[NUM_PLANETS];
+    Model<Vertex> moon;
     DescriptorSet sunDS;
     DescriptorSet planetDS[NUM_PLANETS];
+    DescriptorSet moonDS;
     Texture sunTexture;
     Texture planetTextures[NUM_PLANETS];
+    Texture moonTexture;
 
     // C++ storage for uniform variables
     UniformBlock sunUBO;
     UniformBlock planetUBO[NUM_PLANETS];
+    UniformBlock moonUBO;
 
     // Planet properties
     struct PlanetProperties {
         float orbitRadius;
+        float revolutionSpeed;
         float rotationSpeed;
-        float orbitSpeed;
+        float eclipticInclination;
+        float axialTilt;
         glm::vec3 scale;
     };
     PlanetProperties planetProps[NUM_PLANETS];
 
-    // Other application parameters
+    // Moon properties
+    struct MoonProperties {
+        float orbitRadius;
+        float revolutionSpeed;
+        float rotationSpeed;
+        glm::vec3 scale;
+    };
+    MoonProperties moonProps;
+
+    // Sun scale
+    glm::vec3 sunScale;
+
     glm::vec3 CamPos = glm::vec3(0, 30, 100); // Camera start position
     glm::vec3 CamTarget = glm::vec3(0, 0, 0); // Camera target (sun)
     glm::vec3 CamUp = glm::vec3(0, 1, 0);     // Camera up direction
 
     glm::mat4 ViewMatrix = glm::lookAt(CamPos, CamTarget, CamUp);
+
 
     float vel = 0.0f;
     float x_rot = 0.0f;
@@ -66,6 +89,9 @@ protected:
 
     float time = 0.0f;
 
+    // JSON data
+    json solarSystemData;
+
     void setWindowParameters() {
         windowWidth = 1600;
         windowHeight = 900;
@@ -73,15 +99,20 @@ protected:
         windowResizable = GLFW_TRUE;
         initialBackgroundColor = { 0.0f, 0.0f, 0.02f, 1.0f };
 
-        uniformBlocksInPool = NUM_PLANETS + 1;
-        texturesInPool = NUM_PLANETS + 1;
-        setsInPool = NUM_PLANETS + 1;
+        uniformBlocksInPool = NUM_PLANETS + 2;  // +2 for sun and moon
+        texturesInPool = NUM_PLANETS + 2;
+        setsInPool = NUM_PLANETS + 2;
 
         Ar = (float)windowWidth / (float)windowHeight;
     }
 
     void onWindowResize(int w, int h) {
         Ar = (float)w / (float)h;
+    }
+
+    void loadSolarSystemData() {
+        std::ifstream file("solarSystemData.json");
+        file >> solarSystemData;
     }
 
     void localInit() {
@@ -106,6 +137,8 @@ protected:
         // Pipelines
         P.init(this, &VD, "shaders/SolarSystemVert.spv", "shaders/SolarSystemFrag.spv", { &DSL });
 
+        loadSolarSystemData();
+
         // Load sun model and texture
         sun.init(this, &VD, "Models/Sphere.gltf", GLTF);
         sunTexture.init(this, "textures/Sun.jpg");
@@ -117,18 +150,30 @@ protected:
             planetTextures[i].init(this, ("textures/" + planetNames[i] + ".jpg").c_str());
         }
 
-        // Set planet properties
-        float baseOrbitRadius = 5.0f;
-        float baseOrbitSpeed = 1.0f;
-        float baseRotationSpeed = 1.0f;
-        float baseScale = 0.3f;
+        // Load moon model and texture
+        moon.init(this, &VD, "Models/Sphere.gltf", GLTF);
+        moonTexture.init(this, "textures/Moon.jpg");
 
+        // Set planet properties based on JSON data
         for (int i = 0; i < NUM_PLANETS; i++) {
-            planetProps[i].orbitRadius = baseOrbitRadius * (i + 1);
-            planetProps[i].rotationSpeed = baseRotationSpeed / sqrt(i + 1);
-            planetProps[i].orbitSpeed = baseOrbitSpeed / pow(i + 1, 1.5);
-            planetProps[i].scale = glm::vec3(baseScale * (0.5f + i * 0.2f));
+            const auto& planetData = solarSystemData[planetNames[i]];
+            planetProps[i].orbitRadius = planetData["distance_from_sun"];
+            planetProps[i].revolutionSpeed = 1.0f / planetData["revolution_period"].get<float>();
+            planetProps[i].rotationSpeed = 1.0f / planetData["rotation_period"].get<float>();
+            planetProps[i].eclipticInclination = glm::radians(planetData["ecliptic_inclination"].get<float>());
+            planetProps[i].axialTilt = glm::radians(planetData["axial_tilt"].get<float>());
+            planetProps[i].scale = glm::vec3(planetData["radius"].get<float>());
         }
+
+        // Set moon properties
+        const auto& moonData = solarSystemData["Moon"];
+        moonProps.orbitRadius = moonData["distance_from_planet"];
+        moonProps.revolutionSpeed = 1.0f / moonData["revolution_period"].get<float>();
+        moonProps.rotationSpeed = 1.0f / moonData["rotation_period"].get<float>();
+        moonProps.scale = glm::vec3(moonData["radius"].get<float>());
+
+        // Set sun scale
+        sunScale = glm::vec3(solarSystemData["Sun"]["radius"].get<float>());
     }
 
     void pipelinesAndDescriptorSetsInit() {
@@ -147,6 +192,12 @@ protected:
                 {1, TEXTURE, 0, &planetTextures[i]}
                 });
         }
+
+        // Create descriptor set for moon
+        moonDS.init(this, &DSL, {
+            {0, UNIFORM, sizeof(UniformBlock), nullptr},
+            {1, TEXTURE, 0, &moonTexture}
+            });
     }
 
     void pipelinesAndDescriptorSetsCleanup() {
@@ -155,6 +206,7 @@ protected:
         for (int i = 0; i < NUM_PLANETS; i++) {
             planetDS[i].cleanup();
         }
+        moonDS.cleanup();
     }
 
     void localCleanup() {
@@ -164,6 +216,8 @@ protected:
             planetTextures[i].cleanup();
             planets[i].cleanup();
         }
+        moonTexture.cleanup();
+        moon.cleanup();
         DSL.cleanup();
         P.destroy();
     }
@@ -182,14 +236,16 @@ protected:
             planets[i].bind(commandBuffer);
             vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(planets[i].indices.size()), 1, 0, 0, 0);
         }
+
+        // Draw moon
+        moonDS.bind(commandBuffer, P, 0, currentImage);
+        moon.bind(commandBuffer);
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(moon.indices.size()), 1, 0, 0, 0);
     }
 
     void updateUniformBuffer(uint32_t currentImage) {
         static bool debounce = false;
         static int curDebounce = 0;
-
-        // ***----------------------------***
-        // INPUT + VIEWMATRIX STUFF
 
         // Integration with the timers and the controllers
         float deltaT;
@@ -217,6 +273,7 @@ protected:
             if (vel > velMax) vel = velMax;
             if (vel < velMin) vel = velMin;
         }
+
 
         //std::cout << "Velocity: " << vel << std::endl;
 
@@ -278,6 +335,7 @@ protected:
 
         glm::mat4 View = ViewMatrix;
 
+
         // Debugging key V
         if (glfwGetKey(window, GLFW_KEY_V)) {
             if (!debounce) {
@@ -309,7 +367,7 @@ protected:
         glm::vec3 lightPos = glm::vec3(0, 0, 0);
 
         // Update sun uniform buffer
-        glm::mat4 sunWorld = glm::scale(glm::mat4(1.0f), glm::vec3(3.0f));
+        glm::mat4 sunWorld = glm::scale(glm::mat4(1.0f), sunScale);
         sunUBO.mvpMat = Prj * View * sunWorld;
         sunUBO.lightPos = lightPos;
         sunDS.map(currentImage, &sunUBO, sizeof(sunUBO), 0);
@@ -317,15 +375,16 @@ protected:
         // Update planet uniform buffers
         for (int i = 0; i < NUM_PLANETS; i++) {
             // Calculate planet position
-            float angle = time * planetProps[i].orbitSpeed;
+            float angle = time * planetProps[i].revolutionSpeed;
             glm::vec3 position(
                 cos(angle) * planetProps[i].orbitRadius,
-                0.0f,
-                sin(angle) * planetProps[i].orbitRadius
+                sin(planetProps[i].eclipticInclination) * planetProps[i].orbitRadius * sin(angle),
+                sin(angle) * planetProps[i].orbitRadius * cos(planetProps[i].eclipticInclination)
             );
 
             // Calculate planet rotation
-            glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), time * planetProps[i].rotationSpeed, glm::vec3(0, 1, 0));
+            glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), planetProps[i].axialTilt, glm::vec3(0, 0, 1)) *
+                glm::rotate(glm::mat4(1.0f), time * planetProps[i].rotationSpeed, glm::vec3(0, 1, 0));
 
             // Create world matrix
             glm::mat4 World = glm::translate(glm::mat4(1.0f), position) *
@@ -336,6 +395,54 @@ protected:
             planetUBO[i].mvpMat = Prj * View * World;
             planetUBO[i].lightPos = lightPos;
             planetDS[i].map(currentImage, &planetUBO[i], sizeof(planetUBO[i]), 0);
+        }
+
+        // Update moon uniform buffer
+        int earthIndex = 2; // Assuming Earth is the third planet (index 2) in our array
+        float earthAngle = time * planetProps[earthIndex].revolutionSpeed;
+        glm::vec3 earthPosition(
+            cos(earthAngle)* planetProps[earthIndex].orbitRadius,
+            sin(planetProps[earthIndex].eclipticInclination)* planetProps[earthIndex].orbitRadius* sin(earthAngle),
+            sin(earthAngle)* planetProps[earthIndex].orbitRadius* cos(planetProps[earthIndex].eclipticInclination)
+        );
+
+        float moonAngle = time * moonProps.revolutionSpeed;
+        glm::vec3 moonRelativePosition(
+            cos(moonAngle)* moonProps.orbitRadius,
+            sin(moonAngle)* moonProps.orbitRadius,
+            0
+        );
+
+        glm::vec3 moonPosition = earthPosition + moonRelativePosition;
+
+        glm::mat4 moonRotation = glm::rotate(glm::mat4(1.0f), time * moonProps.rotationSpeed, glm::vec3(0, 1, 0));
+
+        glm::mat4 moonWorld = glm::translate(glm::mat4(1.0f), moonPosition) *
+            moonRotation *
+            glm::scale(glm::mat4(1.0f), moonProps.scale);
+
+        moonUBO.mvpMat = Prj * View * moonWorld;
+        moonUBO.lightPos = lightPos;
+        moonDS.map(currentImage, &moonUBO, sizeof(moonUBO), 0);
+
+        // Debugging key V
+        if (glfwGetKey(window, GLFW_KEY_V)) {
+            if (!debounce) {
+                debounce = true;
+                curDebounce = GLFW_KEY_V;
+                printMat4("ViewMatrix  ", View);
+            }
+        }
+        else {
+            if ((curDebounce == GLFW_KEY_V) && debounce) {
+                debounce = false;
+                curDebounce = 0;
+            }
+        }
+
+        // Standard procedure to quit when the ESC key is pressed
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE)) {
+            glfwSetWindowShouldClose(window, GL_TRUE);
         }
     }
 };

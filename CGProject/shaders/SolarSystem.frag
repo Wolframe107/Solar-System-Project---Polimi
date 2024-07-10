@@ -3,37 +3,45 @@
 layout(location = 0) in vec2 fragTexCoord;
 layout(location = 1) in vec3 fragNormal;
 layout(location = 2) in vec3 fragPos;
-layout(location = 3) in vec3 fragLightPos;
 
 layout(location = 0) out vec4 outColor;
+
+layout(binding = 0) uniform UniformBufferObject {
+    mat4 mvp;
+    vec3 lightPos;
+} ubo;
 
 layout(binding = 1) uniform sampler2D texSampler;
 
 void main() {
-    // Material properties
-    vec3 objectColor = texture(texSampler, fragTexCoord).rgb;
-    float ambientStrength = 0.1;
-    float specularStrength = 0.5;
-    float shininess = 32.0;
-
-    // Normalize vectors
     vec3 norm = normalize(fragNormal);
-    vec3 lightDir = normalize(fragLightPos - fragPos);
-    
-    // Ambient
-    vec3 ambient = ambientStrength * vec3(1.0);
+    vec3 lightDir = normalize(ubo.lightPos - fragPos);
 
-    // Diffuse
+    // Basic diffuse lighting
     float diff = max(dot(norm, lightDir), 0.0);
-    vec3 diffuse = diff * vec3(1.0);
 
-    // Specular
-    vec3 viewDir = normalize(-fragPos); // Assuming camera at (0,0,0)
-    vec3 reflectDir = reflect(-lightDir, norm);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
-    vec3 specular = specularStrength * spec * vec3(1.0);
+    // Quantize the diffuse to create cel shading effect
+    float levels = 4.0;
+    diff = floor(diff * levels) / levels;
 
-    // Combine results
-    vec3 result = (ambient + diffuse + specular) * objectColor;
-    outColor = vec4(result, 1.0);
+    // Sample the texture
+    vec3 texColor = texture(texSampler, fragTexCoord).rgb;
+
+    // Apply cel shading
+    vec3 celColor = texColor * diff;
+
+    // Add an outline
+    float outline = 1.0;
+    if (dot(norm, vec3(0.0, 0.0, 1.0)) < 0.2) {
+        outline = 0.0;
+    }
+
+    // Combine cel shading and outline
+    vec3 finalColor = mix(vec3(0.0), celColor, outline);
+
+    // Add a subtle ambient light to prevent completely black areas
+    finalColor += texColor * 0.1;
+
+    // Output final color without transparency
+    outColor = vec4(finalColor, 1.0);
 }
