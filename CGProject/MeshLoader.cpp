@@ -74,14 +74,13 @@ protected:
     // Sun scale
     glm::vec3 sunScale;
 
-    // Other application parameters
-    glm::vec3 CamPos = glm::vec3(0, 70, 140); // Camera start position
+    glm::vec3 CamPos = glm::vec3(0, 30, 100); // Camera start position
     glm::vec3 CamTarget = glm::vec3(0, 0, 0); // Camera target (sun)
     glm::vec3 CamUp = glm::vec3(0, 1, 0);     // Camera up direction
 
     glm::mat4 ViewMatrix = glm::lookAt(CamPos, CamTarget, CamUp);
 
-    float acc = 0.0f;
+
     float vel = 0.0f;
     float x_rot = 0.0f;
     float y_rot = 0.0f;
@@ -254,36 +253,36 @@ protected:
         bool fire = false;
         getSixAxis(deltaT, m, r, fire);
 
+        // getSixAxis() is defined in Starter.hpp in the base class.
+        // It fills the float point variable passed in its first parameter with the time
+        // since the last call to the procedure.
+        // It fills vec3 in the second parameters, with three values in the -1,1 range corresponding
+        // to motion (with left stick of the gamepad, or ASWD + RF keys on the keyboard)
+        // It fills vec3 in the third parameters, with three values in the -1,1 range corresponding
+        // to motion (with right stick of the gamepad, or Arrow keys + QE keys on the keyboard, or mouse)
+        // If fills the last boolean variable with true if fire has been pressed:
+        //          SPACE on the keyboard, A or B button on the Gamepad, Right mouse button
+
         // Update acceleration
-        const float accAmount = 0.0005f;
-        const float accMin = -0.01f;
-        const float accMax = 0.01f;
-        const float decAmount = 0.0002f; // Deceleration amount
+        const float velMin = -5.0;
+        const float velMax = 5.0;
+        const float acc = 0.05f;
 
-        if (m.z != 0) {
-            acc += accAmount * m.z;
-            if (acc > accMax) acc = accMax;
-            if (acc < accMin) acc = accMin;
-        }
-        else {
-            // Decelerate to zero if no key is pressed
-            if (acc > 0) {
-                acc -= decAmount;
-                if (acc < 0) acc = 0;
-            }
-            else if (acc < 0) {
-                acc += decAmount;
-                if (acc > 0) acc = 0;
-            }
+        if (m.z != 0 && vel >= velMin && vel <= velMax) {
+            vel += m.z * acc;
+            if (vel > velMax) vel = velMax;
+            if (vel < velMin) vel = velMin;
         }
 
-        vel += acc;
-        // Set vel to 0 when around margin
+
+        //std::cout << "Velocity: " << vel << std::endl;
+
+        // Set vel to 0 when around margin        
         if (vel > -0.25f && vel < 0.25f) {
             if (vel < 0.0) vel += 0.001f;
             if (vel > 0.0) vel -= 0.001f;
         }
-
+        
         // Update rotation
         const float rotAmount = 0.005;
 
@@ -326,10 +325,7 @@ protected:
         ViewMatrix = glm::rotate(glm::mat4(1), -rotation_speed * z_rot * deltaT, glm::vec3(0, 0, 1)) * ViewMatrix;
         ViewMatrix = glm::translate(glm::mat4(1), -glm::vec3(0, 0, -vel * deltaT)) * ViewMatrix;
 
-        // Update time
-        time += deltaT;
-
-        // Camera parameters
+        // Perspective + View
         const float FOVy = glm::radians(45.0f);
         const float nearPlane = 0.1f;
         const float farPlane = 500.0f;
@@ -338,6 +334,34 @@ protected:
         Prj[1][1] *= -1;
 
         glm::mat4 View = ViewMatrix;
+
+
+        // Debugging key V
+        if (glfwGetKey(window, GLFW_KEY_V)) {
+            if (!debounce) {
+                debounce = true;
+                curDebounce = GLFW_KEY_V;
+
+                printMat4("ViewMatrix  ", View);
+
+            }
+        }
+        else {
+            if ((curDebounce == GLFW_KEY_V) && debounce) {
+                debounce = false;
+                curDebounce = 0;
+            }
+        }
+
+        // Standard procedure to quit when the ESC key is pressed
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE)) {
+            glfwSetWindowShouldClose(window, GL_TRUE);
+        }
+
+        // ***----------------------------***
+
+        // Update time
+        time += deltaT;
 
         // Light position (at the sun's position)
         glm::vec3 lightPos = glm::vec3(0, 0, 0);
