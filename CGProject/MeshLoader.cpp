@@ -10,7 +10,9 @@ using json = nlohmann::json;
 
 // The uniform buffer objects data structure
 struct UniformBlock {
-    alignas(16) glm::mat4 mvpMat;
+    alignas(16) glm::mat4 model;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 proj;
     alignas(16) glm::vec3 lightPos;
 };
 
@@ -33,7 +35,7 @@ protected:
     VertexDescriptor VD;
 
     // Pipelines
-    Pipeline P;
+    Pipeline P, sunP;
 
     // Solar system objects
     static const int NUM_PLANETS = 8;  // Mercury to Neptune
@@ -111,7 +113,7 @@ protected:
         windowResizable = GLFW_TRUE;
         initialBackgroundColor = { 0.0f, 0.0f, 0.02f, 1.0f };
 
-        uniformBlocksInPool = NUM_PLANETS + 3;  // +2 for sun and moon
+        uniformBlocksInPool = NUM_PLANETS + 3;  // +3 for sun, moon, and ship
         texturesInPool = NUM_PLANETS + 3;
         setsInPool = NUM_PLANETS + 3;
 
@@ -148,6 +150,7 @@ protected:
 
         // Pipelines
         P.init(this, &VD, "shaders/SolarSystemVert.spv", "shaders/SolarSystemFrag.spv", { &DSL });
+        sunP.init(this, &VD, "shaders/SunVert.spv", "shaders/SunFrag.spv", { &DSL });
 
         loadSolarSystemData();
 
@@ -168,12 +171,6 @@ protected:
         // Load ship model and texture
         ship.init(this, &VD, "Models/cube.obj", OBJ);
         shipTexture.init(this, "textures/checker.png");
-
-        // Set planet properties
-        float baseOrbitRadius = 5.0f;
-        float baseOrbitSpeed = 1.0f;
-        float baseRotationSpeed = 1.0f;
-        float baseScale = 0.3f;
 
         // Set planet properties based on JSON data
         for (int i = 0; i < NUM_PLANETS; i++) {
@@ -199,6 +196,7 @@ protected:
 
     void pipelinesAndDescriptorSetsInit() {
         P.create();
+        sunP.create();
 
         // Create descriptor set for sun
         sunDS.init(this, &DSL, {
@@ -228,6 +226,7 @@ protected:
 
     void pipelinesAndDescriptorSetsCleanup() {
         P.cleanup();
+        sunP.cleanup();
         sunDS.cleanup();
         for (int i = 0; i < NUM_PLANETS; i++) {
             planetDS[i].cleanup();
@@ -249,15 +248,18 @@ protected:
         ship.cleanup();
         DSL.cleanup();
         P.destroy();
+        sunP.destroy();
     }
 
     void populateCommandBuffer(VkCommandBuffer commandBuffer, int currentImage) {
-        P.bind(commandBuffer);
-
         // Draw sun
-        sunDS.bind(commandBuffer, P, 0, currentImage);
+        sunP.bind(commandBuffer);
+        sunDS.bind(commandBuffer, sunP, 0, currentImage);
         sun.bind(commandBuffer);
         vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(sun.indices.size()), 1, 0, 0, 0);
+
+        // Draw planets, moon, and ship
+        P.bind(commandBuffer);
 
         // Draw planets
         for (int i = 0; i < NUM_PLANETS; i++) {
@@ -270,35 +272,22 @@ protected:
         moonDS.bind(commandBuffer, P, 0, currentImage);
         moon.bind(commandBuffer);
         vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(moon.indices.size()), 1, 0, 0, 0);
+
         // Draw ship
         shipDS.bind(commandBuffer, P, 0, currentImage);
         ship.bind(commandBuffer);
         vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(ship.indices.size()), 1, 0, 0, 0);
-
     }
 
     void updateUniformBuffer(uint32_t currentImage) {
         static bool debounce = false;
         static int curDebounce = 0;
 
-        // ***----------------------------***
-        // INPUT + VIEWMATRIX STUFF
-
         // Integration with the timers and the controllers
         float deltaT;
         glm::vec3 m = glm::vec3(0.0f), r = glm::vec3(0.0f);
         bool fire = false;
         getSixAxis(deltaT, m, r, fire);
-
-        // getSixAxis() is defined in Starter.hpp in the base class.
-        // It fills the float point variable passed in its first parameter with the time
-        // since the last call to the procedure.
-        // It fills vec3 in the second parameters, with three values in the -1,1 range corresponding
-        // to motion (with left stick of the gamepad, or ASWD + RF keys on the keyboard)
-        // It fills vec3 in the third parameters, with three values in the -1,1 range corresponding
-        // to motion (with right stick of the gamepad, or Arrow keys + QE keys on the keyboard, or mouse)
-        // If fills the last boolean variable with true if fire has been pressed:
-        //          SPACE on the keyboard, A or B button on the Gamepad, Right mouse button
 
         // Update acceleration
         const float velMin = -5.0;
@@ -310,9 +299,6 @@ protected:
             if (vel > velMax) vel = velMax;
             if (vel < velMin) vel = velMin;
         }
-
-
-        //std::cout << "Velocity: " << vel << std::endl;
 
         // Set vel to 0 when around margin        
         if (vel > -0.25f && vel < 0.25f) {
@@ -360,11 +346,6 @@ protected:
         const float rotation_speed = 1.0f;
         shipPos -= glm::vec3(0, 0, -vel * deltaT);
 
-        //rotationMatrix.x = glm::rotate(glm::mat4(1), rotation_speed * x_rot * deltaT, glm::vec3(1, 0, 0));
-        //rotationMatrix.y = glm::rotate(glm::mat4(1), rotation_speed * y_rot * deltaT, glm::vec3(0, 1, 0));
-        //rotationMatrix.z = glm::rotate(glm::mat4(1), rotation_speed * z_rot * deltaT, glm::vec3(0, 0, 1));
-
-
         if (viewMode == 0) {
             // First-person (Look-in)
             ViewMatrix = glm::rotate(glm::mat4(1), rotation_speed * x_rot * deltaT, glm::vec3(1, 0, 0)) * ViewMatrix;
@@ -378,7 +359,6 @@ protected:
             // Third-person (Look-at)
             thirdPersonCamPos = shipPos + glm::vec3(0, 5, -10);
             thirdPersonCamTarget = shipPos;
-            //float Roll = 0.0f;
             glm::mat4 thirdPersonViewMatrix = glm::lookAt(thirdPersonCamPos, thirdPersonCamTarget, glm::vec3(0, 1, 0));
             View = thirdPersonViewMatrix;
         }
@@ -391,36 +371,16 @@ protected:
         glm::mat4 Prj = glm::perspective(FOVy, Ar, nearPlane, farPlane);
         Prj[1][1] *= -1;
 
-
-        // Debugging key - P
-        if (glfwGetKey(window, GLFW_KEY_P)) {
+        // Debugging keys
+        if (glfwGetKey(window, GLFW_KEY_P) || glfwGetKey(window, GLFW_KEY_V)) {
             if (!debounce) {
                 debounce = true;
-                curDebounce = GLFW_KEY_P;
-
+                curDebounce = glfwGetKey(window, GLFW_KEY_P) ? GLFW_KEY_P : GLFW_KEY_V;
                 printMat4("ViewMatrix  ", View);
-
             }
         }
         else {
-            if ((curDebounce == GLFW_KEY_P) && debounce) {
-                debounce = false;
-                curDebounce = 0;
-            }
-        }
-
-        // Third person view - V
-        if (glfwGetKey(window, GLFW_KEY_V)) {
-            if (!debounce) {
-                debounce = true;
-                curDebounce = GLFW_KEY_V;
-
-                printMat4("ViewMatrix  ", View);
-
-            }
-        }
-        else {
-            if ((curDebounce == GLFW_KEY_V) && debounce) {
+            if (debounce) {
                 debounce = false;
                 curDebounce = 0;
             }
@@ -431,8 +391,6 @@ protected:
             glfwSetWindowShouldClose(window, GL_TRUE);
         }
 
-        // ***----------------------------***
-
         // Update time
         time += deltaT;
 
@@ -441,7 +399,9 @@ protected:
 
         // Update sun uniform buffer
         glm::mat4 sunWorld = glm::scale(glm::mat4(1.0f), sunScale);
-        sunUBO.mvpMat = Prj * View * sunWorld;
+        sunUBO.model = sunWorld;
+        sunUBO.view = View;
+        sunUBO.proj = Prj;
         sunUBO.lightPos = lightPos;
         sunDS.map(currentImage, &sunUBO, sizeof(sunUBO), 0);
 
@@ -465,7 +425,9 @@ protected:
                 glm::scale(glm::mat4(1.0f), planetProps[i].scale);
 
             // Update uniform buffer
-            planetUBO[i].mvpMat = Prj * View * World;
+            planetUBO[i].model = World;
+            planetUBO[i].view = View;
+            planetUBO[i].proj = Prj;
             planetUBO[i].lightPos = lightPos;
             planetDS[i].map(currentImage, &planetUBO[i], sizeof(planetUBO[i]), 0);
         }
@@ -494,33 +456,18 @@ protected:
             moonRotation *
             glm::scale(glm::mat4(1.0f), moonProps.scale);
 
-        moonUBO.mvpMat = Prj * View * moonWorld;
+        moonUBO.model = moonWorld;
+        moonUBO.view = View;
+        moonUBO.proj = Prj;
         moonUBO.lightPos = lightPos;
         moonDS.map(currentImage, &moonUBO, sizeof(moonUBO), 0);
 
-        // Debugging key V
-        if (glfwGetKey(window, GLFW_KEY_V)) {
-            if (!debounce) {
-                debounce = true;
-                curDebounce = GLFW_KEY_V;
-                printMat4("ViewMatrix  ", View);
-            }
-        }
-        else {
-            if ((curDebounce == GLFW_KEY_V) && debounce) {
-                debounce = false;
-                curDebounce = 0;
-            }
-        }
-
-        // Standard procedure to quit when the ESC key is pressed
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE)) {
-            glfwSetWindowShouldClose(window, GL_TRUE);
-        }
-        // Update ship uniform buffers
+        // Update ship uniform buffer
         glm::mat4 shipWorld = glm::translate(glm::mat4(1.0f), shipPos);
         shipWorld = glm::scale(shipWorld, glm::vec3(1.0f));
-        shipUBO.mvpMat = Prj * View * sunWorld;
+        shipUBO.model = shipWorld;
+        shipUBO.view = View;
+        shipUBO.proj = Prj;
         shipUBO.lightPos = lightPos;
         shipDS.map(currentImage, &shipUBO, sizeof(shipUBO), 0);
     }
