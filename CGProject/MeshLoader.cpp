@@ -111,10 +111,9 @@ protected:
         windowResizable = GLFW_TRUE;
         initialBackgroundColor = { 0.0f, 0.0f, 0.02f, 1.0f };
 
-        uniformBlocksInPool = NUM_PLANETS + 2;  // +2 for sun and moon
-        uniformBlocksInPool = NUM_PLANETS + 2;
-        texturesInPool = NUM_PLANETS + 2;
-        setsInPool = NUM_PLANETS + 2;
+        uniformBlocksInPool = NUM_PLANETS + 3;  // +2 for sun and moon
+        texturesInPool = NUM_PLANETS + 3;
+        setsInPool = NUM_PLANETS + 3;
 
         Ar = (float)windowWidth / (float)windowHeight;
     }
@@ -220,6 +219,11 @@ protected:
             {0, UNIFORM, sizeof(UniformBlock), nullptr},
             {1, TEXTURE, 0, &moonTexture}
             });
+
+        shipDS.init(this, &DSL, {
+            {0, UNIFORM, sizeof(UniformBlock), nullptr},
+            {1, TEXTURE, 0, &shipTexture}
+            });
     }
 
     void pipelinesAndDescriptorSetsCleanup() {
@@ -315,7 +319,7 @@ protected:
             if (vel < 0.0) vel += 0.001f;
             if (vel > 0.0) vel -= 0.001f;
         }
-        
+
         // Update rotation
         const float rotAmount = 0.005;
 
@@ -359,7 +363,7 @@ protected:
         //rotationMatrix.x = glm::rotate(glm::mat4(1), rotation_speed * x_rot * deltaT, glm::vec3(1, 0, 0));
         //rotationMatrix.y = glm::rotate(glm::mat4(1), rotation_speed * y_rot * deltaT, glm::vec3(0, 1, 0));
         //rotationMatrix.z = glm::rotate(glm::mat4(1), rotation_speed * z_rot * deltaT, glm::vec3(0, 0, 1));
-        
+
 
         if (viewMode == 0) {
             // First-person (Look-in)
@@ -367,7 +371,7 @@ protected:
             ViewMatrix = glm::rotate(glm::mat4(1), rotation_speed * y_rot * deltaT, glm::vec3(0, 1, 0)) * ViewMatrix;
             ViewMatrix = glm::rotate(glm::mat4(1), -rotation_speed * z_rot * deltaT, glm::vec3(0, 0, 1)) * ViewMatrix;
             ViewMatrix = glm::translate(glm::mat4(1), -glm::vec3(0, 0, -vel * deltaT)) * ViewMatrix;
-            
+
             View = ViewMatrix;
         }
         else {
@@ -387,7 +391,7 @@ protected:
         glm::mat4 Prj = glm::perspective(FOVy, Ar, nearPlane, farPlane);
         Prj[1][1] *= -1;
 
-        
+
         // Debugging key - P
         if (glfwGetKey(window, GLFW_KEY_P)) {
             if (!debounce) {
@@ -470,15 +474,15 @@ protected:
         int earthIndex = 2; // Assuming Earth is the third planet (index 2) in our array
         float earthAngle = time * planetProps[earthIndex].revolutionSpeed;
         glm::vec3 earthPosition(
-            cos(earthAngle)* planetProps[earthIndex].orbitRadius,
-            sin(planetProps[earthIndex].eclipticInclination)* planetProps[earthIndex].orbitRadius* sin(earthAngle),
-            sin(earthAngle)* planetProps[earthIndex].orbitRadius* cos(planetProps[earthIndex].eclipticInclination)
+            cos(earthAngle) * planetProps[earthIndex].orbitRadius,
+            sin(planetProps[earthIndex].eclipticInclination) * planetProps[earthIndex].orbitRadius * sin(earthAngle),
+            sin(earthAngle) * planetProps[earthIndex].orbitRadius * cos(planetProps[earthIndex].eclipticInclination)
         );
 
         float moonAngle = time * moonProps.revolutionSpeed;
         glm::vec3 moonRelativePosition(
-            cos(moonAngle)* moonProps.orbitRadius,
-            sin(moonAngle)* moonProps.orbitRadius,
+            cos(moonAngle) * moonProps.orbitRadius,
+            sin(moonAngle) * moonProps.orbitRadius,
             0
         );
 
