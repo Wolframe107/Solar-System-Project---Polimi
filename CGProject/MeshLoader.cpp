@@ -3,10 +3,9 @@
 #include <fstream>
 #define _USE_MATH_DEFINES
 #include <math.h>
-// This has been adapted from the Vulkan tutorial and modified for a solar system simulation
+#include "Starter.hpp"
 
 using json = nlohmann::json;
-#include "Starter.hpp"
 
 // The uniform buffer objects data structure
 struct UniformBlock {
@@ -16,11 +15,20 @@ struct UniformBlock {
     alignas(16) glm::vec3 lightPos;
 };
 
-// The vertex data structure
+struct skyBoxUniformBufferObject {
+    alignas(16) glm::mat4 mvpMat;
+};
+
+// The vertex data structure for planets and other objects
 struct Vertex {
     glm::vec3 pos;
     glm::vec2 UV;
     glm::vec3 normal;
+};
+
+// The vertex data structure for skybox
+struct SkyboxVertex {
+    glm::vec3 pos;
 };
 
 class MeshLoader : public BaseProject {
@@ -30,12 +38,14 @@ protected:
 
     // Descriptor Layouts
     DescriptorSetLayout DSL;
+    DescriptorSetLayout DSLskyBox;
 
     // Vertex formats
     VertexDescriptor VD;
+    VertexDescriptor skyboxVD;
 
     // Pipelines
-    Pipeline P, sunP;
+    Pipeline P, sunP, skyboxP;
 
     // Solar system objects
     static const int NUM_PLANETS = 8;  // Mercury to Neptune
@@ -43,20 +53,24 @@ protected:
     Model<Vertex> planets[NUM_PLANETS];
     Model<Vertex> moon;
     Model<Vertex> ship;
+    Model<SkyboxVertex> skybox;
     DescriptorSet sunDS;
     DescriptorSet planetDS[NUM_PLANETS];
     DescriptorSet moonDS;
     DescriptorSet shipDS;
+    DescriptorSet skyboxDS;
     Texture sunTexture;
     Texture planetTextures[NUM_PLANETS];
     Texture moonTexture;
     Texture shipTexture;
+    Texture skyboxTexture;
 
     // C++ storage for uniform variables
     UniformBlock sunUBO;
     UniformBlock planetUBO[NUM_PLANETS];
     UniformBlock moonUBO;
     UniformBlock shipUBO;
+    skyBoxUniformBufferObject skyboxUBO;
 
     // Planet properties
     struct PlanetProperties {
@@ -80,6 +94,7 @@ protected:
 
     // Sun scale
     glm::vec3 sunScale;
+
     // Other application parameters
     float vel = 0.0f; // Ship velocity
     float viewMode = 0; // 0 for first person (Look-in), 1 for third person (Look-at)
@@ -113,9 +128,9 @@ protected:
         windowResizable = GLFW_TRUE;
         initialBackgroundColor = { 0.0f, 0.0f, 0.02f, 1.0f };
 
-        uniformBlocksInPool = NUM_PLANETS + 3;  // +3 for sun, moon, and ship
-        texturesInPool = NUM_PLANETS + 3;
-        setsInPool = NUM_PLANETS + 3;
+        uniformBlocksInPool = NUM_PLANETS + 4;  // +4 for sun, moon, ship, and skybox
+        texturesInPool = NUM_PLANETS + 4; // +3 for sun, moon, and ship, +1 for skybox
+        setsInPool = NUM_PLANETS + 4; // +4 for sun, moon, ship, and skybox
 
         Ar = (float)windowWidth / (float)windowHeight;
     }
@@ -136,6 +151,11 @@ protected:
             {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT}
             });
 
+        DSLskyBox.init(this, {
+            {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT},
+            {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT},
+            });
+
         // Vertex descriptors
         VD.init(this, {
             {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX}
@@ -148,29 +168,60 @@ protected:
                     sizeof(glm::vec3), NORMAL}
             });
 
+        // Skybox vertex descriptor
+        skyboxVD.init(this, {
+            {0, sizeof(SkyboxVertex), VK_VERTEX_INPUT_RATE_VERTEX}
+            }, {
+                {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(SkyboxVertex, pos),
+                    sizeof(glm::vec3), POSITION}
+            });
+
         // Pipelines
         P.init(this, &VD, "shaders/SolarSystemVert.spv", "shaders/SolarSystemFrag.spv", { &DSL });
         sunP.init(this, &VD, "shaders/SunVert.spv", "shaders/SunFrag.spv", { &DSL });
+        skyboxP.init(this, &skyboxVD, "shaders/SkyboxVert.spv", "shaders/SkyboxFrag.spv", { &DSLskyBox });
+        skyboxP.setAdvancedFeatures(VK_COMPARE_OP_LESS_OR_EQUAL, VK_POLYGON_MODE_FILL,
+            VK_CULL_MODE_BACK_BIT, false);
 
         loadSolarSystemData();
 
         // Load sun model and texture
         sun.init(this, &VD, "Models/Sphere.gltf", GLTF);
+        if (sun.vertices.empty() || sun.indices.empty()) {
+            throw std::runtime_error("Failed to load sun model");
+        }
         sunTexture.init(this, "textures/Sun.jpg");
 
         // Load planet models and textures
         std::string planetNames[] = { "Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune" };
         for (int i = 0; i < NUM_PLANETS; i++) {
             planets[i].init(this, &VD, "Models/Sphere.gltf", GLTF);
+            if (planets[i].vertices.empty() || planets[i].indices.empty()) {
+                throw std::runtime_error("Failed to load planet model: " + planetNames[i]);
+            }
             planetTextures[i].init(this, ("textures/" + planetNames[i] + ".jpg").c_str());
         }
 
         // Load moon model and texture
         moon.init(this, &VD, "Models/Sphere.gltf", GLTF);
+        if (moon.vertices.empty() || moon.indices.empty()) {
+            throw std::runtime_error("Failed to load moon model");
+        }
         moonTexture.init(this, "textures/Moon.jpg");
+
         // Load ship model and texture
         ship.init(this, &VD, "Models/cube.obj", OBJ);
+        if (ship.vertices.empty() || ship.indices.empty()) {
+            throw std::runtime_error("Failed to load ship model");
+        }
         shipTexture.init(this, "textures/checker.png");
+
+        // Load skybox model and texture
+        skybox.init(this, &skyboxVD, "Models/SkyBoxCube.obj", OBJ);
+        if (skybox.vertices.empty() || skybox.indices.empty()) {
+            throw std::runtime_error("Failed to load skybox model");
+        }
+        skyboxTexture.init(this, "Textures/Skybox.jpg");
 
         // Set planet properties based on JSON data
         for (int i = 0; i < NUM_PLANETS; i++) {
@@ -197,14 +248,14 @@ protected:
     void pipelinesAndDescriptorSetsInit() {
         P.create();
         sunP.create();
+        skyboxP.create();
 
-        // Create descriptor set for sun
+        // Create descriptor sets for sun, planets, moon, ship, and skybox
         sunDS.init(this, &DSL, {
             {0, UNIFORM, sizeof(UniformBlock), nullptr},
             {1, TEXTURE, 0, &sunTexture}
             });
 
-        // Create descriptor sets for planets
         for (int i = 0; i < NUM_PLANETS; i++) {
             planetDS[i].init(this, &DSL, {
                 {0, UNIFORM, sizeof(UniformBlock), nullptr},
@@ -212,7 +263,6 @@ protected:
                 });
         }
 
-        // Create descriptor set for moon
         moonDS.init(this, &DSL, {
             {0, UNIFORM, sizeof(UniformBlock), nullptr},
             {1, TEXTURE, 0, &moonTexture}
@@ -222,17 +272,24 @@ protected:
             {0, UNIFORM, sizeof(UniformBlock), nullptr},
             {1, TEXTURE, 0, &shipTexture}
             });
+
+        skyboxDS.init(this, &DSLskyBox, {
+            {0, UNIFORM, sizeof(skyBoxUniformBufferObject), nullptr},
+            {1, TEXTURE, 0, &skyboxTexture}
+            });
     }
 
     void pipelinesAndDescriptorSetsCleanup() {
         P.cleanup();
         sunP.cleanup();
+        skyboxP.cleanup();
         sunDS.cleanup();
         for (int i = 0; i < NUM_PLANETS; i++) {
             planetDS[i].cleanup();
         }
         moonDS.cleanup();
         shipDS.cleanup();
+        skyboxDS.cleanup();
     }
 
     void localCleanup() {
@@ -246,37 +303,55 @@ protected:
         moon.cleanup();
         shipTexture.cleanup();
         ship.cleanup();
+        skyboxTexture.cleanup();
+        skybox.cleanup();
         DSL.cleanup();
+        DSLskyBox.cleanup();
         P.destroy();
         sunP.destroy();
+        skyboxP.destroy();
     }
 
     void populateCommandBuffer(VkCommandBuffer commandBuffer, int currentImage) {
+        // Draw skybox first
+        skyboxP.bind(commandBuffer);
+        skybox.bind(commandBuffer);
+        skyboxDS.bind(commandBuffer, skyboxP, 0, currentImage);
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(skybox.indices.size()), 1, 0, 0, 0);
+        
         // Draw sun
-        sunP.bind(commandBuffer);
-        sunDS.bind(commandBuffer, sunP, 0, currentImage);
-        sun.bind(commandBuffer);
-        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(sun.indices.size()), 1, 0, 0, 0);
+        if (!sun.vertices.empty() && !sun.indices.empty()) {
+            sunP.bind(commandBuffer);
+            sunDS.bind(commandBuffer, sunP, 0, currentImage);
+            sun.bind(commandBuffer);
+            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(sun.indices.size()), 1, 0, 0, 0);
+        }
 
         // Draw planets, moon, and ship
         P.bind(commandBuffer);
 
         // Draw planets
         for (int i = 0; i < NUM_PLANETS; i++) {
-            planetDS[i].bind(commandBuffer, P, 0, currentImage);
-            planets[i].bind(commandBuffer);
-            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(planets[i].indices.size()), 1, 0, 0, 0);
+            if (!planets[i].vertices.empty() && !planets[i].indices.empty()) {
+                planetDS[i].bind(commandBuffer, P, 0, currentImage);
+                planets[i].bind(commandBuffer);
+                vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(planets[i].indices.size()), 1, 0, 0, 0);
+            }
         }
 
         // Draw moon
-        moonDS.bind(commandBuffer, P, 0, currentImage);
-        moon.bind(commandBuffer);
-        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(moon.indices.size()), 1, 0, 0, 0);
+        if (!moon.vertices.empty() && !moon.indices.empty()) {
+            moonDS.bind(commandBuffer, P, 0, currentImage);
+            moon.bind(commandBuffer);
+            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(moon.indices.size()), 1, 0, 0, 0);
+        }
 
         // Draw ship
-        shipDS.bind(commandBuffer, P, 0, currentImage);
-        ship.bind(commandBuffer);
-        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(ship.indices.size()), 1, 0, 0, 0);
+        if (!ship.vertices.empty() && !ship.indices.empty()) {
+            shipDS.bind(commandBuffer, P, 0, currentImage);
+            ship.bind(commandBuffer);
+            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(ship.indices.size()), 1, 0, 0, 0);
+        }
     }
 
     void updateUniformBuffer(uint32_t currentImage) {
@@ -470,6 +545,11 @@ protected:
         shipUBO.proj = Prj;
         shipUBO.lightPos = lightPos;
         shipDS.map(currentImage, &shipUBO, sizeof(shipUBO), 0);
+
+        // Update skybox uniform buffer
+        glm::mat4 skyboxModel = glm::scale(glm::mat4(1.0f), glm::vec3(farPlane / 2.0f));
+        skyboxUBO.mvpMat = Prj * glm::mat4(glm::mat3(View)) * skyboxModel; // Remove translation and scale
+        skyboxDS.map(currentImage, &skyboxUBO, sizeof(skyboxUBO), 0);
     }
 };
 
