@@ -34,6 +34,13 @@ struct SkyboxVertex {
 
 class MeshLoader : public BaseProject {
 protected:
+    float speedMultiplier = 0.75f;
+    const float speedStep = 0.05f;
+    const float minSpeed = 0.1f;
+    const float maxSpeed = 3.0f;
+    bool speedKeyPressed = false;
+    float accumulatedTime = 0.0f;
+
     // Current aspect ratio
     float Ar;
 
@@ -335,16 +342,6 @@ protected:
         bool fire = false;
         getSixAxis(deltaT, m, r, fire);
 
-        // getSixAxis() is defined in Starter.hpp in the base class.
-        // It fills the float point variable passed in its first parameter with the time
-        // since the last call to the procedure.
-        // It fills vec3 in the second parameters, with three values in the -1,1 range corresponding
-        // to motion (with left stick of the gamepad, or ASWD + RF keys on the keyboard)
-        // It fills vec3 in the third parameters, with three values in the -1,1 range corresponding
-        // to motion (with right stick of the gamepad, or Arrow keys + QE keys on the keyboard, or mouse)
-        // If fills the last boolean variable with true if fire has been pressed:
-        //          SPACE on the keyboard, A or B button on the Gamepad, Right mouse button
-
         // Update acceleration
         const float velMin = -5.0;
         const float velMax = 5.0;
@@ -453,9 +450,9 @@ protected:
             if (!debounce) {
                 debounce = true;
                 curDebounce = GLFW_KEY_I;
-                
+
                 vel = 0.0f;
-                
+
                 // First person
                 ViewMatrix = glm::translate(glm::mat4(1.0f), -initPos);
             }
@@ -467,13 +464,30 @@ protected:
             }
         }
 
+        // Handle speed changes
+        if (glfwGetKey(window, GLFW_KEY_EQUAL) == GLFW_PRESS) {  // '+' key
+            if (!speedKeyPressed) {
+                speedMultiplier = glm::min(speedMultiplier + speedStep, maxSpeed);
+                speedKeyPressed = true;
+            }
+        }
+        else if (glfwGetKey(window, GLFW_KEY_MINUS) == GLFW_PRESS) {  // '-' key
+            if (!speedKeyPressed) {
+                speedMultiplier = glm::max(speedMultiplier - speedStep, minSpeed);
+                speedKeyPressed = true;
+            }
+        }
+        else {
+            speedKeyPressed = false;
+        }
+
         // Standard procedure to quit when the ESC key is pressed
         if (glfwGetKey(window, GLFW_KEY_ESCAPE)) {
             glfwSetWindowShouldClose(window, GL_TRUE);
         }
 
-        // Update time
-        time += deltaT;
+        // Update accumulated time
+        accumulatedTime += deltaT * speedMultiplier;
 
         // Light position (at the sun's position)
         glm::vec3 lightPos = glm::vec3(0, 0, 0);
@@ -489,7 +503,7 @@ protected:
         // Update planet uniform buffers
         for (int i = 0; i < NUM_PLANETS; i++) {
             // Calculate planet position
-            float angle = time * planetProps[i].revolutionSpeed;
+            float angle = accumulatedTime * planetProps[i].revolutionSpeed;
             glm::vec3 position(
                 cos(angle) * planetProps[i].orbitRadius,
                 sin(planetProps[i].eclipticInclination) * planetProps[i].orbitRadius * sin(angle),
@@ -498,7 +512,7 @@ protected:
 
             // Calculate planet rotation
             glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), planetProps[i].axialTilt, glm::vec3(0, 0, 1)) *
-                glm::rotate(glm::mat4(1.0f), time * planetProps[i].rotationSpeed, glm::vec3(0, 1, 0));
+                glm::rotate(glm::mat4(1.0f), accumulatedTime * planetProps[i].rotationSpeed, glm::vec3(0, 1, 0));
 
             // Create world matrix
             glm::mat4 World = glm::translate(glm::mat4(1.0f), position) *
@@ -515,14 +529,14 @@ protected:
 
         // Update moon uniform buffer
         int earthIndex = 2; // Assuming Earth is the third planet (index 2) in our array
-        float earthAngle = time * planetProps[earthIndex].revolutionSpeed;
+        float earthAngle = accumulatedTime * planetProps[earthIndex].revolutionSpeed;
         glm::vec3 earthPosition(
             cos(earthAngle) * planetProps[earthIndex].orbitRadius,
             sin(planetProps[earthIndex].eclipticInclination) * planetProps[earthIndex].orbitRadius * sin(earthAngle),
             sin(earthAngle) * planetProps[earthIndex].orbitRadius * cos(planetProps[earthIndex].eclipticInclination)
         );
 
-        float moonAngle = time * moonProps.revolutionSpeed;
+        float moonAngle = accumulatedTime * moonProps.revolutionSpeed;
         glm::vec3 moonRelativePosition(
             cos(moonAngle) * moonProps.orbitRadius,
             sin(moonAngle) * moonProps.orbitRadius,
@@ -531,7 +545,7 @@ protected:
 
         glm::vec3 moonPosition = earthPosition + moonRelativePosition;
 
-        glm::mat4 moonRotation = glm::rotate(glm::mat4(1.0f), time * moonProps.rotationSpeed, glm::vec3(0, 1, 0));
+        glm::mat4 moonRotation = glm::rotate(glm::mat4(1.0f), accumulatedTime * moonProps.rotationSpeed, glm::vec3(0, 1, 0));
 
         glm::mat4 moonWorld = glm::translate(glm::mat4(1.0f), moonPosition) *
             moonRotation *
@@ -547,9 +561,13 @@ protected:
         glm::mat4 skyboxModel = glm::scale(glm::mat4(1.0f), glm::vec3(farPlane / 2.0f));
         skyboxUBO.mvpMat = Prj * glm::mat4(glm::mat3(View)) * skyboxModel; // Remove translation and scale
         skyboxDS.map(currentImage, &skyboxUBO, sizeof(skyboxUBO), 0);
-        // Standard procedure to quit when the ESC key is pressed
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE)) {
-            glfwSetWindowShouldClose(window, GL_TRUE);
+
+        // Display speed indicator (you can replace this with on-screen rendering later)
+        static float lastPrintTime = 0.0f;
+        if (accumulatedTime - lastPrintTime > 1.0f) {  // Update every second
+            int speedPercentage = static_cast<int>((speedMultiplier / maxSpeed) * 100);
+            std::cout << "\rSpeed: " << speedPercentage << "% " << std::string(speedPercentage / 2, '|') << std::flush;
+            lastPrintTime = accumulatedTime;
         }
     }
 };
