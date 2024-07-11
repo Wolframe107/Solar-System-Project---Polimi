@@ -4,6 +4,7 @@
 #define _USE_MATH_DEFINES
 #include <math.h>
 #include "Starter.hpp"
+// This has been adapted from the Vulkan tutorial and modified for a solar system simulation
 
 using json = nlohmann::json;
 
@@ -52,24 +53,20 @@ protected:
     Model<Vertex> sun;
     Model<Vertex> planets[NUM_PLANETS];
     Model<Vertex> moon;
-    Model<Vertex> ship;
     Model<SkyboxVertex> skybox;
     DescriptorSet sunDS;
     DescriptorSet planetDS[NUM_PLANETS];
     DescriptorSet moonDS;
-    DescriptorSet shipDS;
     DescriptorSet skyboxDS;
     Texture sunTexture;
     Texture planetTextures[NUM_PLANETS];
     Texture moonTexture;
-    Texture shipTexture;
     Texture skyboxTexture;
 
     // C++ storage for uniform variables
     UniformBlock sunUBO;
     UniformBlock planetUBO[NUM_PLANETS];
     UniformBlock moonUBO;
-    UniformBlock shipUBO;
     skyBoxUniformBufferObject skyboxUBO;
 
     // Planet properties
@@ -97,24 +94,15 @@ protected:
 
     // Other application parameters
     float vel = 0.0f; // Ship velocity
-    float viewMode = 0; // 0 for first person (Look-in), 1 for third person (Look-at)
     float x_rot = 0.0f; //Rotations for the camera
     float y_rot = 0.0f;
     float z_rot = 0.0f;
-    glm::mat4 rotationMatrix;
 
     // First person
-    glm::vec3 shipPos = glm::vec3(0, 30, 100);
-    glm::mat4 ViewMatrix = glm::translate(glm::mat4(1.0f), -shipPos);
+    glm::vec3 initPos = glm::vec3(0.0f, 30.0f, 100.0f);
+    glm::mat4 ViewMatrix = glm::translate(glm::mat4(1.0f), -initPos);
 
-    // Third person
-    glm::vec3 thirdPersonCamPos = shipPos + glm::vec3(0, 5, -10); // Camera behind the ship
-    glm::vec3 thirdPersonCamTarget = shipPos;
-    glm::vec3 thirdPersonCamUp = glm::vec3(0, 1, 0);
-
-    glm::mat4 thirdPersonViewMatrix = glm::lookAt(thirdPersonCamPos, thirdPersonCamTarget, thirdPersonCamUp);
-
-    glm::mat4 View; // The actual view that gets used
+    glm::mat4 View;
 
     float time = 0.0f;
 
@@ -131,6 +119,9 @@ protected:
         uniformBlocksInPool = NUM_PLANETS + 4;  // +4 for sun, moon, ship, and skybox
         texturesInPool = NUM_PLANETS + 4; // +3 for sun, moon, and ship, +1 for skybox
         setsInPool = NUM_PLANETS + 4; // +4 for sun, moon, ship, and skybox
+        uniformBlocksInPool = NUM_PLANETS + 3;  // +2 for sun and moon
+        texturesInPool = NUM_PLANETS + 3;
+        setsInPool = NUM_PLANETS + 3;
 
         Ar = (float)windowWidth / (float)windowHeight;
     }
@@ -209,13 +200,6 @@ protected:
         }
         moonTexture.init(this, "textures/Moon.jpg");
 
-        // Load ship model and texture
-        ship.init(this, &VD, "Models/cube.obj", OBJ);
-        if (ship.vertices.empty() || ship.indices.empty()) {
-            throw std::runtime_error("Failed to load ship model");
-        }
-        shipTexture.init(this, "textures/checker.png");
-
         // Load skybox model and texture
         skybox.init(this, &skyboxVD, "Models/SkyBoxCube.obj", OBJ);
         if (skybox.vertices.empty() || skybox.indices.empty()) {
@@ -256,6 +240,7 @@ protected:
             {1, TEXTURE, 0, &sunTexture}
             });
 
+        // Create descriptor sets for planets
         for (int i = 0; i < NUM_PLANETS; i++) {
             planetDS[i].init(this, &DSL, {
                 {0, UNIFORM, sizeof(UniformBlock), nullptr},
@@ -263,16 +248,11 @@ protected:
                 });
         }
 
+        // Create descriptor set for moon
         moonDS.init(this, &DSL, {
             {0, UNIFORM, sizeof(UniformBlock), nullptr},
             {1, TEXTURE, 0, &moonTexture}
             });
-
-        shipDS.init(this, &DSL, {
-            {0, UNIFORM, sizeof(UniformBlock), nullptr},
-            {1, TEXTURE, 0, &shipTexture}
-            });
-
         skyboxDS.init(this, &DSLskyBox, {
             {0, UNIFORM, sizeof(skyBoxUniformBufferObject), nullptr},
             {1, TEXTURE, 0, &skyboxTexture}
@@ -288,7 +268,6 @@ protected:
             planetDS[i].cleanup();
         }
         moonDS.cleanup();
-        shipDS.cleanup();
         skyboxDS.cleanup();
     }
 
@@ -301,8 +280,6 @@ protected:
         }
         moonTexture.cleanup();
         moon.cleanup();
-        shipTexture.cleanup();
-        ship.cleanup();
         skyboxTexture.cleanup();
         skybox.cleanup();
         DSL.cleanup();
@@ -346,12 +323,6 @@ protected:
             vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(moon.indices.size()), 1, 0, 0, 0);
         }
 
-        // Draw ship
-        if (!ship.vertices.empty() && !ship.indices.empty()) {
-            shipDS.bind(commandBuffer, P, 0, currentImage);
-            ship.bind(commandBuffer);
-            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(ship.indices.size()), 1, 0, 0, 0);
-        }
     }
 
     void updateUniformBuffer(uint32_t currentImage) {
@@ -363,6 +334,16 @@ protected:
         glm::vec3 m = glm::vec3(0.0f), r = glm::vec3(0.0f);
         bool fire = false;
         getSixAxis(deltaT, m, r, fire);
+
+        // getSixAxis() is defined in Starter.hpp in the base class.
+        // It fills the float point variable passed in its first parameter with the time
+        // since the last call to the procedure.
+        // It fills vec3 in the second parameters, with three values in the -1,1 range corresponding
+        // to motion (with left stick of the gamepad, or ASWD + RF keys on the keyboard)
+        // It fills vec3 in the third parameters, with three values in the -1,1 range corresponding
+        // to motion (with right stick of the gamepad, or Arrow keys + QE keys on the keyboard, or mouse)
+        // If fills the last boolean variable with true if fire has been pressed:
+        //          SPACE on the keyboard, A or B button on the Gamepad, Right mouse button
 
         // Update acceleration
         const float velMin = -5.0;
@@ -382,10 +363,10 @@ protected:
         }
 
         // Update rotation
-        const float rotAmount = 0.005;
+        const float rotAmount = 0.01;
 
         // X-axis rotation
-        if (r.x != 0 && x_rot < 1.0) {
+        if (r.x != 0 && x_rot > -1.0 && x_rot < 1.0) {
             x_rot += rotAmount * r.x;
         }
         else if (x_rot > 0.0) {
@@ -395,8 +376,12 @@ protected:
             x_rot += rotAmount;
         }
 
+        if (x_rot > -0.001f && x_rot < 0.001f) {
+            x_rot = 0.0f;
+        }
+
         // Y-axis rotation
-        if (r.y != 0 && y_rot < 1.0) {
+        if (r.y != 0 && y_rot > -1.0 && y_rot < 1.0) {
             y_rot += rotAmount * r.y;
         }
         else if (y_rot > 0.0) {
@@ -406,8 +391,12 @@ protected:
             y_rot += rotAmount;
         }
 
+        if (y_rot > -0.001f && y_rot < 0.001f) {
+            y_rot = 0.0f;
+        }
+
         // Z-axis rotation
-        if (r.z != 0 && z_rot < 1.0) {
+        if (r.z != 0 && z_rot > -1.0 && z_rot < 1.0) {
             z_rot += rotAmount * r.z;
         }
         else if (z_rot > 0.0) {
@@ -417,45 +406,62 @@ protected:
             z_rot += rotAmount;
         }
 
-        // Updating the View Matrix
-        const float rotation_speed = 1.0f;
-        shipPos -= glm::vec3(0, 0, -vel * deltaT);
-
-        if (viewMode == 0) {
-            // First-person (Look-in)
-            ViewMatrix = glm::rotate(glm::mat4(1), rotation_speed * x_rot * deltaT, glm::vec3(1, 0, 0)) * ViewMatrix;
-            ViewMatrix = glm::rotate(glm::mat4(1), rotation_speed * y_rot * deltaT, glm::vec3(0, 1, 0)) * ViewMatrix;
-            ViewMatrix = glm::rotate(glm::mat4(1), -rotation_speed * z_rot * deltaT, glm::vec3(0, 0, 1)) * ViewMatrix;
-            ViewMatrix = glm::translate(glm::mat4(1), -glm::vec3(0, 0, -vel * deltaT)) * ViewMatrix;
-
-            View = ViewMatrix;
-        }
-        else {
-            // Third-person (Look-at)
-            thirdPersonCamPos = shipPos + glm::vec3(0, 5, -10);
-            thirdPersonCamTarget = shipPos;
-            glm::mat4 thirdPersonViewMatrix = glm::lookAt(thirdPersonCamPos, thirdPersonCamTarget, glm::vec3(0, 1, 0));
-            View = thirdPersonViewMatrix;
+        if (z_rot > -0.001f && z_rot < 0.001f) {
+            z_rot = 0.0f;
         }
 
-        // Perspective + View
+        // Create rotation matrix for all axes
+        float rotation_speed = 1.0f;
+        glm::mat4 rotationMatrix = glm::rotate(glm::mat4(1.0f), rotation_speed * x_rot * deltaT, glm::vec3(1, 0, 0))
+            * glm::rotate(glm::mat4(1.0f), rotation_speed * y_rot * deltaT, glm::vec3(0, 1, 0))
+            * glm::rotate(glm::mat4(1.0f), -rotation_speed * z_rot * deltaT, glm::vec3(0, 0, 1));
+
+        // Update perspective projection
         const float FOVy = glm::radians(45.0f);
         const float nearPlane = 0.1f;
         const float farPlane = 500.0f;
-
         glm::mat4 Prj = glm::perspective(FOVy, Ar, nearPlane, farPlane);
         Prj[1][1] *= -1;
 
-        // Debugging keys
-        if (glfwGetKey(window, GLFW_KEY_P) || glfwGetKey(window, GLFW_KEY_V)) {
+        ViewMatrix = rotationMatrix * ViewMatrix;
+        ViewMatrix = glm::translate(glm::mat4(1), glm::vec3(0, 0, vel * deltaT)) * ViewMatrix;
+        View = ViewMatrix;
+
+        // Debugging Print key - P
+        if (glfwGetKey(window, GLFW_KEY_P)) {
             if (!debounce) {
                 debounce = true;
-                curDebounce = glfwGetKey(window, GLFW_KEY_P) ? GLFW_KEY_P : GLFW_KEY_V;
-                printMat4("ViewMatrix  ", View);
+                curDebounce = GLFW_KEY_P;
+
+                std::cout << "xrot: " << x_rot << std::endl;
+                std::cout << "yrot: " << y_rot << std::endl;
+                std::cout << "zrot: " << z_rot << std::endl;
+
+                printMat4("View  ", View);
+                printMat4("rotation  ", rotationMatrix);
             }
         }
         else {
-            if (debounce) {
+            if ((curDebounce == GLFW_KEY_P) && debounce) {
+                debounce = false;
+                curDebounce = 0;
+            }
+        }
+
+        // Reset Position - I
+        if (glfwGetKey(window, GLFW_KEY_I)) {
+            if (!debounce) {
+                debounce = true;
+                curDebounce = GLFW_KEY_I;
+                
+                vel = 0.0f;
+                
+                // First person
+                ViewMatrix = glm::translate(glm::mat4(1.0f), -initPos);
+            }
+        }
+        else {
+            if ((curDebounce == GLFW_KEY_I) && debounce) {
                 debounce = false;
                 curDebounce = 0;
             }
@@ -537,19 +543,14 @@ protected:
         moonUBO.lightPos = lightPos;
         moonDS.map(currentImage, &moonUBO, sizeof(moonUBO), 0);
 
-        // Update ship uniform buffer
-        glm::mat4 shipWorld = glm::translate(glm::mat4(1.0f), shipPos);
-        shipWorld = glm::scale(shipWorld, glm::vec3(1.0f));
-        shipUBO.model = shipWorld;
-        shipUBO.view = View;
-        shipUBO.proj = Prj;
-        shipUBO.lightPos = lightPos;
-        shipDS.map(currentImage, &shipUBO, sizeof(shipUBO), 0);
-
         // Update skybox uniform buffer
         glm::mat4 skyboxModel = glm::scale(glm::mat4(1.0f), glm::vec3(farPlane / 2.0f));
         skyboxUBO.mvpMat = Prj * glm::mat4(glm::mat3(View)) * skyboxModel; // Remove translation and scale
         skyboxDS.map(currentImage, &skyboxUBO, sizeof(skyboxUBO), 0);
+        // Standard procedure to quit when the ESC key is pressed
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE)) {
+            glfwSetWindowShouldClose(window, GL_TRUE);
+        }
     }
 };
 
