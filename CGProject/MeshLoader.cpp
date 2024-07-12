@@ -60,20 +60,24 @@ protected:
     Model<Vertex> sun;
     Model<Vertex> planets[NUM_PLANETS];
     Model<Vertex> moon;
+    Model<Vertex> saturnRing;
     Model<SkyboxVertex> skybox;
     DescriptorSet sunDS;
     DescriptorSet planetDS[NUM_PLANETS];
     DescriptorSet moonDS;
+    DescriptorSet saturnRingDS;
     DescriptorSet skyboxDS;
     Texture sunTexture;
     Texture planetTextures[NUM_PLANETS];
     Texture moonTexture;
+    Texture saturnRingTexture;
     Texture skyboxTexture;
 
     // C++ storage for uniform variables
     UniformBlock sunUBO;
     UniformBlock planetUBO[NUM_PLANETS];
     UniformBlock moonUBO;
+    UniformBlock saturnRingUBO;
     skyBoxUniformBufferObject skyboxUBO;
 
     // Planet properties
@@ -123,12 +127,9 @@ protected:
         windowResizable = GLFW_TRUE;
         initialBackgroundColor = { 0.0f, 0.0f, 0.02f, 1.0f };
 
-        uniformBlocksInPool = NUM_PLANETS + 4;  // +4 for sun, moon, ship, and skybox
-        texturesInPool = NUM_PLANETS + 4; // +3 for sun, moon, and ship, +1 for skybox
-        setsInPool = NUM_PLANETS + 4; // +4 for sun, moon, ship, and skybox
-        uniformBlocksInPool = NUM_PLANETS + 3;  // +2 for sun and moon
-        texturesInPool = NUM_PLANETS + 3;
-        setsInPool = NUM_PLANETS + 3;
+        uniformBlocksInPool = NUM_PLANETS + 4;  // +4 for sun, moon, ring, and skybox
+        texturesInPool = NUM_PLANETS + 4; // +4 for sun, moon, ring, and skybox
+        setsInPool = NUM_PLANETS + 4; // +4 for sun, moon, ring, and skybox
 
         Ar = (float)windowWidth / (float)windowHeight;
     }
@@ -206,6 +207,13 @@ protected:
             throw std::runtime_error("Failed to load moon model");
         }
         moonTexture.init(this, "textures/Moon.jpg");
+        
+        // Load saturn ring model and texture
+        saturnRing.init(this, &VD, "Models/saturnRing.obj", OBJ);
+        if (saturnRing.vertices.empty() || saturnRing.indices.empty()) {
+            throw std::runtime_error("Failed to load ring model");
+        }
+        saturnRingTexture.init(this, "textures/ringAlpha.png");
 
         // Load skybox model and texture
         skybox.init(this, &skyboxVD, "Models/SkyBoxCube.obj", OBJ);
@@ -260,6 +268,14 @@ protected:
             {0, UNIFORM, sizeof(UniformBlock), nullptr},
             {1, TEXTURE, 0, &moonTexture}
             });
+
+        // Create descriptor set for Saturns ring
+        saturnRingDS.init(this, &DSL, {
+            {0, UNIFORM, sizeof(UniformBlock), nullptr},
+            {1, TEXTURE, 0, &saturnRingTexture}
+            });
+
+        // Create descriptor set for skyBox
         skyboxDS.init(this, &DSLskyBox, {
             {0, UNIFORM, sizeof(skyBoxUniformBufferObject), nullptr},
             {1, TEXTURE, 0, &skyboxTexture}
@@ -275,6 +291,7 @@ protected:
             planetDS[i].cleanup();
         }
         moonDS.cleanup();
+        saturnRingDS.cleanup();
         skyboxDS.cleanup();
     }
 
@@ -287,6 +304,8 @@ protected:
         }
         moonTexture.cleanup();
         moon.cleanup();
+        saturnRingTexture.cleanup();
+        saturnRing.cleanup();
         skyboxTexture.cleanup();
         skybox.cleanup();
         DSL.cleanup();
@@ -302,7 +321,7 @@ protected:
         skybox.bind(commandBuffer);
         skyboxDS.bind(commandBuffer, skyboxP, 0, currentImage);
         vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(skybox.indices.size()), 1, 0, 0, 0);
-        
+
         // Draw sun
         if (!sun.vertices.empty() && !sun.indices.empty()) {
             sunP.bind(commandBuffer);
@@ -311,7 +330,7 @@ protected:
             vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(sun.indices.size()), 1, 0, 0, 0);
         }
 
-        // Draw planets, moon, and ship
+        // Draw planets, moon
         P.bind(commandBuffer);
 
         // Draw planets
@@ -328,6 +347,13 @@ protected:
             moonDS.bind(commandBuffer, P, 0, currentImage);
             moon.bind(commandBuffer);
             vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(moon.indices.size()), 1, 0, 0, 0);
+        }
+
+        // Draw saturn ring
+        if (!saturnRing.vertices.empty() && !saturnRing.indices.empty()) {
+            saturnRingDS.bind(commandBuffer, P, 0, currentImage);
+            saturnRing.bind(commandBuffer);
+            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(saturnRing.indices.size()), 1, 0, 0, 0);
         }
 
     }
@@ -556,6 +582,27 @@ protected:
         moonUBO.proj = Prj;
         moonUBO.lightPos = lightPos;
         moonDS.map(currentImage, &moonUBO, sizeof(moonUBO), 0);
+        
+        // Update Saturn Ring uniform buffer
+        int saturnIndex = 5; // Assuming Saturn is the sixth planet (index 5) in our array
+        float saturnAngle = accumulatedTime * planetProps[saturnIndex].revolutionSpeed;
+        glm::vec3 saturnPosition(
+            cos(saturnAngle) * planetProps[saturnIndex].orbitRadius,
+            sin(planetProps[saturnIndex].eclipticInclination) * planetProps[saturnIndex].orbitRadius * sin(saturnAngle),
+            sin(saturnAngle) * planetProps[saturnIndex].orbitRadius * cos(planetProps[saturnIndex].eclipticInclination)
+        );
+
+        glm::mat4 ringRotation = glm::rotate(glm::mat4(1.0f), 59.6f, glm::vec3(0, 1, 0));
+
+        glm::mat4 saturnRingWorld = glm::translate(glm::mat4(1.0f), saturnPosition) *
+            ringRotation *
+            glm::scale(glm::mat4(1.0f), glm::vec3(0.18f));
+
+        saturnRingUBO.model = saturnRingWorld;
+        saturnRingUBO.view = View;
+        saturnRingUBO.proj = Prj;
+        saturnRingUBO.lightPos = lightPos;
+        saturnRingDS.map(currentImage, &saturnRingUBO, sizeof(saturnRingUBO), 0);
 
         // Update skybox uniform buffer
         glm::mat4 skyboxModel = glm::scale(glm::mat4(1.0f), glm::vec3(farPlane / 2.0f));
