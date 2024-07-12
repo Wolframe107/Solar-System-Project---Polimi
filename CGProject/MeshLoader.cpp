@@ -110,7 +110,7 @@ protected:
     float z_rot = 0.0f;
 
     // First person
-    glm::vec3 initPos = glm::vec3(0.0f, 30.0f, 100.0f);
+    glm::vec3 initPos = glm::vec3(0.0f, 10.0f, 100.0f);
     glm::mat4 ViewMatrix = glm::translate(glm::mat4(1.0f), -initPos);
 
     glm::mat4 View;
@@ -460,6 +460,8 @@ protected:
                 std::cout << "yrot: " << y_rot << std::endl;
                 std::cout << "zrot: " << z_rot << std::endl;
 
+                std::cout << "SpeedMultiplier: " << speedMultiplier << std::endl;
+
                 printMat4("View  ", View);
                 printMat4("rotation  ", rotationMatrix);
             }
@@ -491,14 +493,16 @@ protected:
         }
 
         // Handle speed changes
-        if (glfwGetKey(window, GLFW_KEY_EQUAL) == GLFW_PRESS) {  // '+' key
+        if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {  // 'M' key (More speed)
             if (!speedKeyPressed) {
+
                 speedMultiplier = glm::min(speedMultiplier + speedStep, maxSpeed);
                 speedKeyPressed = true;
             }
         }
-        else if (glfwGetKey(window, GLFW_KEY_MINUS) == GLFW_PRESS) {  // '-' key
+        else if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS) {  // 'N' key (Nless speed)
             if (!speedKeyPressed) {
+
                 speedMultiplier = glm::max(speedMultiplier - speedStep, minSpeed);
                 speedKeyPressed = true;
             }
@@ -611,7 +615,7 @@ protected:
 
         // Display speed indicator (you can replace this with on-screen rendering later)
         static float lastPrintTime = 0.0f;
-        if (accumulatedTime - lastPrintTime > 1.0f) {  // Update every second
+        if (accumulatedTime - lastPrintTime > 0.1f) {  // Update every tenth second
             int speedPercentage = static_cast<int>((speedMultiplier / maxSpeed) * 100);
             std::cout << "\rSpeed: " << speedPercentage << "% " << std::string(speedPercentage / 2, '|') << std::flush;
             lastPrintTime = accumulatedTime;
