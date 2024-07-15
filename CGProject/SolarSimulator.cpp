@@ -1,10 +1,11 @@
-// MeshLoader.cpp
+// SolarSimulator.cpp
+// This has been adapted from Starter.hpp, the Vulkan tutorial and the lecures to be modified for a solar system simulation
+
 #include <json.hpp>
 #include <fstream>
-#define _USE_MATH_DEFINES
 #include <math.h>
 #include "Starter.hpp"
-// This has been adapted from the Vulkan tutorial and modified for a solar system simulation
+#define _USE_MATH_DEFINES
 
 using json = nlohmann::json;
 
@@ -16,6 +17,7 @@ struct UniformBlock {
     alignas(16) glm::vec3 lightPos;
 };
 
+// Uniform buffer for Skybox
 struct skyBoxUniformBufferObject {
     alignas(16) glm::mat4 mvpMat;
 };
@@ -32,13 +34,12 @@ struct SkyboxVertex {
     glm::vec3 pos;
 };
 
-class MeshLoader : public BaseProject {
+class SolarSimulator : public BaseProject {
 protected:
     float speedMultiplier = 0.75f;
     const float speedStep = 0.05f;
     const float minSpeed = 0.1f;
     const float maxSpeed = 3.0f;
-    bool speedKeyPressed = false;
     float accumulatedTime = 0.0f;
 
     // Current aspect ratio
@@ -109,13 +110,10 @@ protected:
     float y_rot = 0.0f;
     float z_rot = 0.0f;
 
-    // First person
+    // First person view matrices
     glm::vec3 initPos = glm::vec3(0.0f, 10.0f, 100.0f);
     glm::mat4 ViewMatrix = glm::translate(glm::mat4(1.0f), -initPos);
-
     glm::mat4 View;
-
-    float time = 0.0f;
 
     // JSON data
     json solarSystemData;
@@ -128,16 +126,18 @@ protected:
         initialBackgroundColor = { 0.0f, 0.0f, 0.02f, 1.0f };
 
         uniformBlocksInPool = NUM_PLANETS + 4;  // +4 for sun, moon, ring, and skybox
-        texturesInPool = NUM_PLANETS + 4; // +4 for sun, moon, ring, and skybox
-        setsInPool = NUM_PLANETS + 4; // +4 for sun, moon, ring, and skybox
+        texturesInPool = NUM_PLANETS + 4;
+        setsInPool = NUM_PLANETS + 4;
 
         Ar = (float)windowWidth / (float)windowHeight;
     }
 
+    // Changes aspect ratio when window size changes
     void onWindowResize(int w, int h) {
         Ar = (float)w / (float)h;
     }
 
+    // Loads planetery data
     void loadSolarSystemData() {
         std::ifstream file("solarSystemData.json");
         file >> solarSystemData;
@@ -207,7 +207,7 @@ protected:
             throw std::runtime_error("Failed to load moon model");
         }
         moonTexture.init(this, "textures/Moon.jpg");
-        
+
         // Load saturn ring model and texture
         saturnRing.init(this, &VD, "Models/saturnRing.obj", OBJ);
         if (saturnRing.vertices.empty() || saturnRing.indices.empty()) {
@@ -368,11 +368,12 @@ protected:
         bool fire = false;
         getSixAxis(deltaT, m, r, fire);
 
-        // Update acceleration
+        // Some movement parameters
         const float velMin = -5.0;
         const float velMax = 5.0;
         const float acc = 0.05f;
 
+        // Update velocity
         if (m.z != 0 && vel >= velMin && vel <= velMax) {
             vel += m.z * acc;
             if (vel > velMax) vel = velMax;
@@ -446,6 +447,7 @@ protected:
         glm::mat4 Prj = glm::perspective(FOVy, Ar, nearPlane, farPlane);
         Prj[1][1] *= -1;
 
+        // Update ViewmMtrix based on movement
         ViewMatrix = rotationMatrix * ViewMatrix;
         ViewMatrix = glm::translate(glm::mat4(1), glm::vec3(0, 0, vel * deltaT)) * ViewMatrix;
         View = ViewMatrix;
@@ -480,8 +482,6 @@ protected:
                 curDebounce = GLFW_KEY_I;
 
                 vel = 0.0f;
-
-                // First person
                 ViewMatrix = glm::translate(glm::mat4(1.0f), -initPos);
             }
         }
@@ -494,24 +494,13 @@ protected:
 
         // Handle speed changes
         if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {  // 'M' key (More speed)
-            if (!speedKeyPressed) {
-
-                speedMultiplier = glm::min(speedMultiplier + speedStep, maxSpeed);
-                speedKeyPressed = true;
-            }
+            speedMultiplier = glm::min(speedMultiplier + speedStep, maxSpeed);
         }
         else if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS) {  // 'N' key (Nless speed)
-            if (!speedKeyPressed) {
-
-                speedMultiplier = glm::max(speedMultiplier - speedStep, minSpeed);
-                speedKeyPressed = true;
-            }
-        }
-        else {
-            speedKeyPressed = false;
+            speedMultiplier = glm::max(speedMultiplier - speedStep, minSpeed);
         }
 
-        // Standard procedure to quit when the ESC key is pressed
+        // Close game with ESC
         if (glfwGetKey(window, GLFW_KEY_ESCAPE)) {
             glfwSetWindowShouldClose(window, GL_TRUE);
         }
@@ -586,7 +575,7 @@ protected:
         moonUBO.proj = Prj;
         moonUBO.lightPos = lightPos;
         moonDS.map(currentImage, &moonUBO, sizeof(moonUBO), 0);
-        
+
         // Update Saturn Ring uniform buffer
         int saturnIndex = 5; // Assuming Saturn is the sixth planet (index 5) in our array
         float saturnAngle = accumulatedTime * planetProps[saturnIndex].revolutionSpeed;
@@ -625,7 +614,7 @@ protected:
 
 // Main function
 int main() {
-    MeshLoader app;
+    SolarSimulator app;
 
     try {
         app.run();
