@@ -1,5 +1,5 @@
 // SolarSimulator.cpp
-// This has been adapted from Starter.hpp, the Vulkan tutorial and the lecures to be modified for a solar system simulation
+// This has been adapted from the Vulkan tutorial and the lecures to be modified for a solar system simulation
 
 #include <json.hpp>
 #include <fstream>
